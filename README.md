@@ -23,40 +23,43 @@ Dev Ops: Docker, Vercel, Railway
 - Create a `.env` (see `.env.example`) with API keys and DB/Redis URIs
 - Install Node deps in `backend/api` and Python deps in `backend/worker`
 
-## 2) `.env.example` (place as `backend/.env.example` - copy to `.env` and populate)
+## 2) `.env` files
+
+There are two separate `.env` files — one for the API, one for the worker. **Do not use the same file for both.**
+
+### `backend/api/.env`
 
 ```
-# Redis
+REDIS_URL=redis://localhost:6379
+DATABASE_URL=postgresql://keyframe_user:password@localhost:5432/keyframe_db
+PORT=3001
+```
+
+### `backend/worker/.env`
+
+```
+# Redis (must match the API's REDIS_URL — Celery uses this as both broker and result backend)
 REDIS_URL=redis://localhost:6379
 
 # Database
 DATABASE_URL=postgresql://keyframe_user:password@localhost:5432/keyframe_db
 
-# Backend HTTP
-PORT=3001
-BACKEND_URL=http://localhost:3001
-
-# Local output folder for job artifacts
-KEYFRAME_OUTPUT_DIR=C:\\tmp
-
-# FFmpeg override (optional)
-FFMPEG_PATH=./bin/ffmpeg.exe
-FFPROBE_PATH=./bin/ffprobe.exe
-
-# Third-party API keys (fill when required)
+# Third-party API keys
 OPENAI_API_KEY=
 NEBIUS_API_KEY=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_REGION=us-east-1
-POLLY_VOICE=Joanna
 
-# Cloudflare R2 (optional)
-R2_ACCOUNT_ID=
-R2_ACCESS_KEY=
-R2_SECRET_KEY=
-R2_BUCKET=
+# Cloudflare R2 (for video/thumbnail storage)
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_ACCESS_KEY_ID=
+CLOUDFLARE_SECRET_ACCESS_KEY=
+R2_BUCKET_NAME=
+R2_PUBLIC_DOMAIN=
 ```
+
+> **Note:** FFmpeg is **not** configured via env vars. The worker hardcodes the path to `<repo-root>/bin/ffmpeg.exe`. You must place `ffmpeg.exe` and `ffprobe.exe` in a `bin/` folder at the repository root (see FFmpeg section below).
 
 ## 3) Quick Docker Compose (start Redis/Postgres locally)
 
@@ -87,8 +90,19 @@ volumes:
 
 ## 4) FFmpeg (Windows guidance)
 
-- Recommended: put `ffmpeg.exe` and `ffprobe.exe` in `./bin/` at the repository root.
-- Verify: `./bin/ffmpeg.exe -version` and `./bin/ffprobe.exe -version` or add `./bin` to your PATH.
+The worker code hardcodes the FFmpeg path to `<repo-root>/bin/ffmpeg.exe` — it is **not** overridable via environment variables.
+
+1. Download a Windows FFmpeg build from [https://www.gyan.dev/ffmpeg/builds/](https://www.gyan.dev/ffmpeg/builds/) (get the "essentials" release build)
+2. Extract and copy `ffmpeg.exe` and `ffprobe.exe` into a `bin/` folder at the repository root:
+   ```
+   KeyFrame.v1/
+   └── bin/
+       ├── ffmpeg.exe
+       └── ffprobe.exe
+   ```
+3. Verify: `./bin/ffmpeg.exe -version`
+
+> The `bin/` folder is git-ignored, so you need to do this on every fresh clone.
 
 ## 5) Install & run (local, non-Docker)
 
@@ -96,22 +110,22 @@ Backend API
 
 ```powershell
 cd backend/api
-npm install
-set PORT=3001
-node index.js
+npm install       # skip if node_modules already exists
+node index.js     # PORT is read from backend/api/.env (default 3001)
 ```
 
 Python worker (Windows recommended steps)
 
 ```powershell
 cd backend/worker
-python -m venv .venv
+python -m venv .venv            # skip if .venv already exists
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-# Run Celery worker (Windows: use --pool=solo)
-set REDIS_URL=redis://localhost:6379
+pip install -r requirements.txt # skip if already installed
+# Run Celery worker (Windows: --pool=solo is required)
 celery -A app worker --loglevel=info --pool=solo
 ```
+
+> `REDIS_URL` is loaded automatically from `backend/worker/.env` via `python-dotenv`.
 
 # Frontend (Setup)
 
@@ -124,11 +138,17 @@ Install dependencies and run the dev server:
 
 ```powershell
 cd frontend
-npm install
+npm install       # skip if node_modules already exists
 npm run dev
 ```
 
 The dev server runs on `http://localhost:3000` by default.
+
+Create `frontend/.env.local` to point the frontend at the real backend (already created if you followed the setup above):
+
+```
+NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
+```
 
 ## 2) Assets
 

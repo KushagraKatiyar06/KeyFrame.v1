@@ -14,7 +14,7 @@ def stitch_video(image_paths, audio_path, timings, job_id, temp_dir):
     try:
 
         segment_paths = []
-        FFMPEG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'bin', 'ffmpeg.exe'))
+        FFMPEG_PATH = os.getenv('FFMPEG_PATH') or os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'bin', 'ffmpeg.exe'))
 
         print("1. Iterating through clips and audios and stitching into video")
 
@@ -93,10 +93,10 @@ def stitch_video(image_paths, audio_path, timings, job_id, temp_dir):
         raise
 
 def get_video_info(video_path):
-    # NOTE: FFMPEG_PATH is still not accessible here, relying on system PATH for 'ffprobe'
     try:
+        FFPROBE_PATH = os.getenv('FFPROBE_PATH') or os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'bin', 'ffprobe.exe'))
         command = [
-            'ffprobe',
+            FFPROBE_PATH,
             '-v', 'quiet',
             '-print_format', 'json',
             '-show_format',

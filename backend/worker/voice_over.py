@@ -19,8 +19,9 @@ def get_audio_duration_mutagen(path):
 # fallback audio duration extraction
 def get_audio_duration_ffprobe(path):
     try:
+        FFPROBE_PATH = os.getenv('FFPROBE_PATH') or os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'bin', 'ffprobe.exe'))
         cmd = [
-            'ffprobe', '-v', 'error', '-select_streams', 'a:0', '-show_entries',
+            FFPROBE_PATH, '-v', 'error', '-select_streams', 'a:0', '-show_entries',
             'stream=duration', '-of', 'default=noprint_wrappers=1:nokey=1', path
         ]
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
@@ -111,29 +112,17 @@ def generate_voice_over(script_json, job_id, temp_dir):
             slide_paths.append(path)
             slide_durations.append(duration)
 
-        # concatenate slide mp3s into one file using ffmpeg concat demuxer
+        # concatenate slide mp3s into one file using pure Python binary concat
+        # (avoids subprocess/AppLocker issues; works for CBR MP3 from Polly)
         print("\n3. Concatenating slide mp3s into one...")
 
-        concat_list = os.path.join(temp_dir, 'audio_concat.txt')
-        with open(concat_list, 'w', encoding='utf-8') as f:
-            for p in slide_paths:
-                f.write(f"file '{p}'\n")
-
         full_audio = os.path.join(temp_dir, 'voiceover_full.mp3')
-        FFMPEG = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'bin', 'ffmpeg.exe'))
-
-        cmd = [
-            FFMPEG,
-            '-y',
-            '-f', 'concat',
-            '-safe', '0',
-            '-i', concat_list,
-            '-c', 'copy',
-            full_audio
-        ]
 
         print("Concatenating slide audio into full voiceover...")
-        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        with open(full_audio, 'wb') as outfile:
+            for p in slide_paths:
+                with open(p, 'rb') as infile:
+                    outfile.write(infile.read())
 
         # final sanity check
         print("4. Final tts checks...")
@@ -148,9 +137,6 @@ def generate_voice_over(script_json, job_id, temp_dir):
 
     except (BotoCoreError, ClientError) as e:
         print(f"Polly error: {e}")
-        raise
-    except subprocess.CalledProcessError as e:
-        print(f"FFmpeg error while concatenating audio: {e.stderr}")
         raise
     except Exception as e:
         print(f"Unexpected error in voice_over: {e}")
