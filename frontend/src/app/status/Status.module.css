@@ -144,72 +144,6 @@
 }
 
 
-.feedToggleContainer {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    width: 100%;
-    margin-top: 5rem;
-}
-
-.toggleButton {
-    background: none;
-    border: none;
-    color: white;
-    font-size: 3.5rem;
-    cursor: pointer;
-    margin-bottom: 1rem;
-    transition: transform 0.2s ease-in-out;
-}
-
-.feedContainer {
-    max-width: 1000px;
-    width: 100%;
-    overflow: hidden;
-    transition: max-height 0.5s ease-in-out, opacity 0.3s ease-in-out;
-}
-
-.feedContainer.collapsed {
-    max-height: 0;
-    opacity: 0;
-}
-
-.feedGrid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1rem;
-    padding: 1rem;
-    background: rgba(0, 0, 0, 0.4);
-    border-radius: 8px;
-}
-
-.videoCard {
-    background: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    color: white;
-}
-
-.thumbnail {
-    width: 100%;
-    height: auto;
-    background-color: #555;
-}
-
-.cardDetails {
-    padding: 0.75rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.cardTitle {
-    font-weight: 600;
-    font-size: 1rem;
-}
-
 /* Submit Button */
 .submitButton {
     width: 100%;
@@ -316,4 +250,149 @@
 
 .backButton:active {
     transform: scale(0.95);
+}
+
+/* Agent graph */
+.agentGraph {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    width: 100%;
+    max-width: 280px;
+    margin-bottom: 2rem;
+}
+
+.agentGraphRow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
+.agentNode {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    border: 1px solid #333;
+    background: #111;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transition: border-color 0.3s, background 0.3s;
+    position: relative;
+    overflow: hidden;
+}
+
+/* idle */
+.agentNode_idle {
+    opacity: 0.3;
+}
+
+/* done */
+.agentNode_done {
+    border-color: #2a4a2a;
+    background: #0f1f0f;
+    opacity: 0.8;
+}
+
+.agentNode_done .agentNodeIndicator {
+    background: #4ade80;
+}
+
+.agentNode_done .agentNodeName {
+    color: #4ade80;
+}
+
+/* active */
+.agentNode_active {
+    border-color: #FF5757;
+    background: rgba(255, 87, 87, 0.07);
+    box-shadow: 0 0 16px rgba(255, 87, 87, 0.15);
+    animation: nodeGlow 2s ease-in-out infinite;
+}
+
+.agentNode_active .agentNodeIndicator {
+    background: #FF5757;
+    animation: pulseDot 1.2s ease-in-out infinite;
+}
+
+/* retry */
+.agentNode_retry {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.07);
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.15);
+    animation: nodeGlowAmber 2s ease-in-out infinite;
+}
+
+.agentNode_retry .agentNodeIndicator {
+    background: #f59e0b;
+    animation: pulseDot 0.8s ease-in-out infinite;
+}
+
+.agentNode_retry .agentNodeName {
+    color: #f59e0b;
+}
+
+.agentNodeIndicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #444;
+    flex-shrink: 0;
+}
+
+.agentNodeName {
+    color: white;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    flex-shrink: 0;
+    width: 72px;
+}
+
+.agentNodeLabel {
+    color: #888;
+    font-size: 0.72rem;
+    font-family: monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.agentNode_active .agentNodeLabel,
+.agentNode_retry .agentNodeLabel {
+    color: #ccc;
+}
+
+.agentNode_done .agentNodeLabel {
+    color: #4ade80;
+}
+
+/* Edge between nodes */
+.agentEdge {
+    width: 2px;
+    height: 20px;
+    background: #333;
+    transition: background 0.3s;
+}
+
+.agentEdgeActive {
+    background: #FF5757;
+}
+
+@keyframes pulseDot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.7); }
+}
+
+@keyframes nodeGlow {
+    0%, 100% { box-shadow: 0 0 12px rgba(255, 87, 87, 0.15); }
+    50%       { box-shadow: 0 0 24px rgba(255, 87, 87, 0.35); }
+}
+
+@keyframes nodeGlowAmber {
+    0%, 100% { box-shadow: 0 0 12px rgba(245, 158, 11, 0.15); }
+    50%       { box-shadow: 0 0 24px rgba(245, 158, 11, 0.35); }
 }

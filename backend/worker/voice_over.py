@@ -7,6 +7,14 @@ import random
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# style-specific voices — generative engine tried first, neural fallback per-synthesis
+STYLE_VOICES = {
+    'Educational': ['Ruth', 'Joanna'],
+    'Storytelling': ['Brian'],
+    'Meme': ['Matthew'],
+    'Default': ['Matthew'],
+}
+
 # main audio duration extraction
 def get_audio_duration_mutagen(path):
     try:
@@ -43,7 +51,7 @@ def get_audio_duration(path):
     return None
 
 # main tts generation method
-def generate_voice_over(script_json, job_id, temp_dir):
+def generate_voice_over(script_json, job_id, temp_dir, style='Default'):
     print("Beginning voice over generation...\n\n")
     
     polly = boto3.client(
@@ -55,11 +63,11 @@ def generate_voice_over(script_json, job_id, temp_dir):
 
     slides = script_json.get('slides', [])
 
-    # randomize voices
+    # select voice by style
     print("1. Setting voice...")
 
-    VOICE_IDS = ['Joanna', 'Matthew', 'Kendra', 'Amy', 'Justin']
-    random_voice = random.choice(VOICE_IDS)
+    voice_pool = STYLE_VOICES.get(style, STYLE_VOICES['Default'])
+    random_voice = random.choice(voice_pool)
 
     print("2. Generating all voiceovers in parallel (polly api calls)... \n")
     os.makedirs(temp_dir, exist_ok=True)
@@ -70,14 +78,23 @@ def generate_voice_over(script_json, job_id, temp_dir):
             narration = slide.get('narration_prompt', '')
             print(f"{i}. Polly: narrating slide {i + 1}/{len(slides)}... ({len(narration)} chars)")
 
-            # api call to amazon polly
-            response = polly.synthesize_speech(
-                Text = narration,
-                TextType = 'text',
-                OutputFormat = 'mp3',
-                VoiceId = random_voice,
-                Engine='standard'
-            )
+            # api call to amazon polly — try generative engine, fall back to neural
+            try:
+                response = polly.synthesize_speech(
+                    Text=narration,
+                    TextType='text',
+                    OutputFormat='mp3',
+                    VoiceId=random_voice,
+                    Engine='generative'
+                )
+            except Exception:
+                response = polly.synthesize_speech(
+                    Text=narration,
+                    TextType='text',
+                    OutputFormat='mp3',
+                    VoiceId=random_voice,
+                    Engine='neural'
+                )
 
             audio_stream = response.get('AudioStream')
             if not audio_stream:

@@ -8,20 +8,93 @@ import { Navbar } from '../../components/Navbar';
 
 interface JobStatus {
     jobId: string;
-    status: 'queued' | 'processing' | 'done' | 'failed';
+    status: string;
     progress: number;
     videoUrl: string | null;
     thumbnailUrl: string | null;
 }
 
-interface FeedVideo {
-    id: string;
-    title: string;
-    style: string;
-    thumbnailUrl: string;
-    videoUrl: string;
+type AgentState = 'idle' | 'active' | 'retry' | 'done';
+
+interface AgentCard {
+    key: string;
+    name: string;
+    role: string;
+    activeLabel: (s: string) => string;
+    doneLabel: string;
 }
 
+const AGENT_CARDS: AgentCard[] = [
+    {
+        key: 'watchman',
+        name: 'Watchman',
+        role: 'Pre-flight',
+        activeLabel: () => 'Verifying APIs & FFmpeg...',
+        doneLabel: 'Environment OK',
+    },
+    {
+        key: 'director',
+        name: 'Director',
+        role: 'Scripting',
+        activeLabel: () => 'Writing script & visual bible...',
+        doneLabel: 'Script ready',
+    },
+    {
+        key: 'artist',
+        name: 'Artist',
+        role: 'Generating',
+        activeLabel: (s) => s.startsWith('agent_artist_slide_')
+            ? `Painting slide ${s.split('_').pop()}...`
+            : 'Generating images...',
+        doneLabel: 'Images ready',
+    },
+    {
+        key: 'auditor',
+        name: 'Auditor',
+        role: 'Validating',
+        activeLabel: (s) => s === 'agent_auditor_retry' ? 'Retrying failed output...' : 'Validating outputs...',
+        doneLabel: 'Outputs valid',
+    },
+    {
+        key: 'editor',
+        name: 'Editor',
+        role: 'Stitching',
+        activeLabel: (s) => s === 'agent_uploading' ? 'Uploading to R2...' : 'Stitching with FFmpeg...',
+        doneLabel: 'Video ready',
+    },
+];
+
+const STATUS_ORDER: Record<string, number> = {
+    queued: 0, processing: 0,
+    agent_watchman_active: 1,
+    agent_director_writing: 2,
+    agent_auditor_checking: 4,
+    agent_auditor_retry: 4,
+    agent_stitching: 5,
+    agent_uploading: 5,
+    done: 6,
+};
+
+function getStatusOrder(status: string): number {
+    if (status.startsWith('agent_artist_slide_')) return 3;
+    return STATUS_ORDER[status] ?? 0;
+}
+
+function getAgentStates(status: string): Record<string, AgentState> {
+    const agentOrder = ['watchman', 'director', 'artist', 'auditor', 'editor'];
+    const agentThresholds = [1, 2, 3, 4, 5];
+    const current = getStatusOrder(status);
+    const isRetry = status === 'agent_auditor_retry';
+
+    const states: Record<string, AgentState> = {};
+    agentOrder.forEach((key, i) => {
+        const threshold = agentThresholds[i];
+        if (current > threshold) states[key] = 'done';
+        else if (current === threshold) states[key] = (isRetry && key === 'auditor') ? 'retry' : 'active';
+        else states[key] = 'idle';
+    });
+    return states;
+}
 
 export default function StatusPage({ params }: { params: Promise<{ jobId: string }> }) {
     //Unwraps params using React.use()
@@ -29,21 +102,12 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
     const jobId = unwrappedParams.jobId;
 
     const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
-    const [feed, setFeed] = useState<FeedVideo[]>([]);
     const [error, setError] = useState<string | null>(null);
-    const [isFeedOpen, setIsFeedOpen] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [videoTitle, setVideoTitle] = useState(`VIDEO NAME #${jobId.slice(0, 4)}`);
-    const [selectedCommunityVideo, setSelectedCommunityVideo] = useState<FeedVideo | null>(null);
 
     const mainVideoRef = useRef<HTMLVideoElement>(null);
     const modalVideoRef = useRef<HTMLVideoElement>(null);
-    const communityVideoRef = useRef<HTMLVideoElement>(null);
-    const communityModalVideoRef = useRef<HTMLVideoElement>(null);
-
-    //Keeps the delay state for a smooth transition from submission
-    const [isAwaitingInitialStatus, setIsAwaitingInitialStatus] = useState(true);
-
 
     const fetchStatus = useCallback(async () => {
         if (!jobId) {
@@ -64,22 +128,6 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
         }
     }, [jobId]);
 
-    const fetchFeed = useCallback(async () => {
-        try {
-            const res = await fetch('/api/v1/feed');
-            if (!res.ok) {
-                throw new Error(`Feed fetch failed: ${res.status}`);
-            }
-            const data = await res.json();
-            //Backend returns { success, count, videos: [...]}
-            const videos = data.videos || data;
-            setFeed(Array.isArray(videos) ? videos : []);
-        } catch (err) {
-            console.error("Feed error:", err);
-        }
-    }, []);
-
-
     useEffect(() => {
         let intervalId: NodeJS.Timeout | undefined;
 
@@ -91,10 +139,7 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
 
         // 1.Initial Delay Timer (2 seconds)
         const initialDelayTimer = setTimeout(() => {
-            setIsAwaitingInitialStatus(false);
-
             fetchStatus();
-            fetchFeed();
 
             // 2. Start Polling Interval (Only starts if status is still not complete/error)
             intervalId = setInterval(fetchStatus, 5000);
@@ -110,173 +155,8 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
             }
         };
 
-    }, [fetchStatus, fetchFeed, jobStatus?.status]);
+    }, [fetchStatus, jobStatus?.status]);
 
-
-    const CommunityFeedView = () => (
-        <div className={styles.feedToggleContainer}>
-            <button
-                className={styles.toggleButton}
-                onClick={() => setIsFeedOpen(!isFeedOpen)}
-                style={{ transform: isFeedOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
-            >
-                &#x230d;
-            </button>
-
-            <div className={`${styles.feedContainer} ${!isFeedOpen ? styles.collapsed : ''}`}>
-                <div className={styles.feedGrid}>
-                    {feed.map((video) => (
-                        <div
-                            key={video.id}
-                            className={styles.videoCard}
-                            onClick={() => setSelectedCommunityVideo(video)}
-                            style={{ cursor: 'pointer' }}
-                        >
-                            <div className={styles.thumbnail}>
-                                <video
-                                    src={video.videoUrl}
-                                    className={styles.videoThumbnail}
-                                    preload="metadata"
-                                    muted
-                                />
-                            </div>
-                            <div className={styles.cardDetails}>
-                                <span className={styles.cardTitle}>{video.title}</span>
-                                <span className={styles.cardDetails} style={{ color: '#FF5757' }}>&#x26B2; {video.id.split('-').pop()}</span>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-
-            </div>
-        </div>
-    );
-
-    const CommunityVideoDetailView = ({ video }: { video: FeedVideo }) => {
-        const [isCommunityModalOpen, setIsCommunityModalOpen] = useState(false);
-
-        const handleOpenCommunityModal = () => {
-            const mainVideo = communityVideoRef.current;
-            if (mainVideo) {
-                mainVideo.pause();
-                setIsCommunityModalOpen(true);
-
-                setTimeout(() => {
-                    const modalVideo = communityModalVideoRef.current;
-                    if (modalVideo) {
-                        modalVideo.currentTime = mainVideo.currentTime;
-                        modalVideo.play();
-                    }
-                }, 50);
-            }
-        };
-
-        const handleCloseCommunityModal = () => {
-            const modalVideo = communityModalVideoRef.current;
-            const mainVideo = communityVideoRef.current;
-
-            if (modalVideo && mainVideo) {
-                mainVideo.currentTime = modalVideo.currentTime;
-                const wasPlaying = !modalVideo.paused;
-
-                setIsCommunityModalOpen(false);
-
-                if (wasPlaying) {
-                    setTimeout(() => {
-                        mainVideo.play();
-                    }, 50);
-                }
-            } else {
-                setIsCommunityModalOpen(false);
-            }
-        };
-
-        return (
-            <>
-                <main className={styles.mainContainer}>
-                    <div className={styles.completeViewContainer}>
-
-                        {/* Back Arrow Button */}
-                        <button
-                            className={styles.backButton}
-                            onClick={() => setSelectedCommunityVideo(null)}
-                            title="Back to community feed"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <line x1="19" y1="12" x2="5" y2="12"></line>
-                                <polyline points="12 19 5 12 12 5"></polyline>
-                            </svg>
-                        </button>
-
-                        <div className={styles.videoCard}>
-                            <div className={styles.videoWrapper}>
-                                <video
-                                    ref={communityVideoRef}
-                                    controls
-                                    src={video.videoUrl}
-                                    style={{
-                                        width: '100%',
-                                        height: '100%',
-                                        objectFit: 'contain'
-                                    }}
-                                >
-                                    Your browser does not support the video tag.
-                                </video>
-                            </div>
-
-                            <div className={styles.controlsRow}>
-                                <div className={styles.videoTitleInput} style={{ flexGrow: 1 }}>
-                                    {video.title}
-                                </div>
-
-                                <button
-                                    onClick={() => window.open(video.videoUrl, '_blank')}
-                                    className={styles.iconButton}
-                                    title="Open in new tab"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>
-                                </button>
-
-                                <button
-                                    className={styles.iconButton}
-                                    onClick={handleOpenCommunityModal}
-                                    title="View fullscreen"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Modal for fullscreen video */}
-                    {isCommunityModalOpen && (
-                        <div className={styles.modalOverlay} onClick={handleCloseCommunityModal}>
-                            <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-                                <button
-                                    className={styles.closeButton}
-                                    onClick={handleCloseCommunityModal}
-                                >
-                                    ✕
-                                </button>
-                                <video
-                                    ref={communityModalVideoRef}
-                                    controls
-                                    src={video.videoUrl}
-                                    style={{
-                                        width: '100%',
-                                        maxHeight: '80vh',
-                                        objectFit: 'contain'
-                                    }}
-                                >
-                                    Your browser does not support the video tag.
-                                </video>
-                            </div>
-                        </div>
-                    )}
-                </main>
-            </>
-        );
-    };
 
     if (jobStatus?.status === 'done' && jobStatus.videoUrl) {
         const handleDownload = () => {
@@ -427,15 +307,12 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
 
 
     // RENDER 2: PROCESSING STATE
-    // If a community video is selected, show detail view
-    if (selectedCommunityVideo) {
-        return <CommunityVideoDetailView video={selectedCommunityVideo} />;
-    }
+    const currentStatus = jobStatus?.status || 'queued';
+    const agentStates = getAgentStates(currentStatus);
 
     return (
         <>
             <main className={styles.mainContainer}>
-
                 <div className={styles.processArea}>
 
                     <div className={styles.logoIcon}>
@@ -448,26 +325,34 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
                         />
                     </div>
 
-                    <p className={styles.statusText}>
-                        FILMING, NARRATING, KEYFRAMING... PLEASE WAIT
-                    </p>
+                    <p className={styles.statusText}>AGENTIC PIPELINE RUNNING</p>
 
-                    <div className={styles.progressBarContainer}>
-                        <div
-                            className={styles.progressBarFill}
-                            style={{ width: `${jobStatus ? jobStatus.progress : 0}%` }}
-                        ></div>
+                    {/* Agent graph */}
+                    <div className={styles.agentGraph}>
+                        {AGENT_CARDS.map((agent, i) => {
+                            const state = agentStates[agent.key];
+                            const label = state === 'done'
+                                ? agent.doneLabel
+                                : state === 'active' || state === 'retry'
+                                    ? agent.activeLabel(currentStatus)
+                                    : agent.role;
+                            return (
+                                <div key={agent.key} className={styles.agentGraphRow}>
+                                    <div className={`${styles.agentNode} ${styles[`agentNode_${state}`]}`}>
+                                        <div className={styles.agentNodeIndicator} />
+                                        <div className={styles.agentNodeName}>{agent.name}</div>
+                                        <div className={styles.agentNodeLabel}>{label}</div>
+                                    </div>
+                                    {i < AGENT_CARDS.length - 1 && (
+                                        <div className={`${styles.agentEdge} ${agentStates[AGENT_CARDS[i + 1].key] !== 'idle' ? styles.agentEdgeActive : ''}`} />
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
-
-                    <p className={styles.detailStatus}>
-                        Status: {jobStatus ? jobStatus.status : 'Loading...'} ({jobStatus?.progress}%)
-                    </p>
 
                     {error && <p className={styles.errorText}>{error}</p>}
                 </div>
-
-                {/*The Community Feed with Collapse/Expand */}
-                <CommunityFeedView />
             </main>
         </>
     );

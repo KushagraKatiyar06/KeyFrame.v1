@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 //Proxy to backend API
 export async function GET() {
     try {
-        const backendUrl = process.env.BACKEND_URL || 'http://localhost:3000';
+        const backendUrl = process.env.BACKEND_URL || 'http://localhost:3002';
 
         //Added a 10 second timeout to prevent hanging
         const controller = new AbortController();

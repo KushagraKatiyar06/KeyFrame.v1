@@ -6,8 +6,19 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # main image generation method
 
-def generate_images(script_json, job_id, style, temp_dir):
+def generate_images(script_json, job_id, style, temp_dir, session_seed=None, status_callback=None):
     slides = script_json.get('slides', [])
+    visual_bible = script_json.get('visual_bible', {})
+
+    # build a prefix from the visual bible to prepend to every prompt
+    bible_parts = []
+    if visual_bible.get('art_style'):
+        bible_parts.append(visual_bible['art_style'])
+    if visual_bible.get('color_palette'):
+        bible_parts.append(f"color palette: {visual_bible['color_palette']}")
+    if visual_bible.get('lighting_style'):
+        bible_parts.append(f"lighting: {visual_bible['lighting_style']}")
+    bible_prefix = (', '.join(bible_parts) + '. ') if bible_parts else ''
 
     print(f"Beginning image generation...\n\n")
 
@@ -37,7 +48,17 @@ def generate_images(script_json, job_id, style, temp_dir):
 
     # Function to generate a single image
     def generate_single_image(i, slide):
-        image_prompt = slide.get('image_prompt', '')
+        if status_callback:
+            status_callback(f'agent_artist_slide_{i+1}')
+
+        base_prompt = slide.get('image_prompt', '')
+
+        # prepend visual bible + reference previous frame for continuity
+        if i > 0 and slides[i - 1].get('image_prompt'):
+            prev_context = slides[i - 1]['image_prompt'][:100]
+            image_prompt = f"{bible_prefix}{base_prompt}. Continuing from previous scene: {prev_context}"
+        else:
+            image_prompt = f"{bible_prefix}{base_prompt}"
 
         try:
             if style == 'Educational':
@@ -62,7 +83,7 @@ def generate_images(script_json, job_id, style, temp_dir):
                         "width": 1920,
                         "height": 1080,
                         "num_inference_steps": 16,
-                        "seed": -1}
+                        "seed": session_seed if session_seed is not None else -1}
                 )
 
                 image_bytes = base64.b64decode(completion.data[0].b64_json)

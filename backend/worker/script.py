@@ -134,9 +134,54 @@ def generate_script(prompt, style):
         print(f"Error parsing OpenAI resopnse as JSON: {e}")
         print(f"Response was: {output_json_string}")
         raise Exception("Failed to generated valid JSON")
-    
+
     except Exception as e:
         print(f"Error generating script {e}")
         raise
+
+
+def generate_visual_bible(script_data, style):
+    """Generates a global visual consistency guide for image generation."""
+    print("Director: generating visual bible...")
+
+    title = script_data.get('title', '')
+    prompts_summary = ' | '.join([s.get('image_prompt', '')[:80] for s in script_data.get('slides', [])])
+
+    bible_prompt = f"""For a {style} video titled "{title}", create a concise Visual Bible to keep AI-generated images visually consistent.
+
+Slide themes: {prompts_summary}
+
+Return ONLY valid JSON:
+{{
+  "characters": "Key subjects/characters with consistent visual traits (appearance, clothing, style)",
+  "color_palette": "3-5 dominant colors and their role (e.g. warm amber highlights, deep navy backgrounds)",
+  "lighting_style": "Consistent lighting description (e.g. soft natural daylight, dramatic rim lighting)",
+  "art_style": "Overall visual style (e.g. cinematic photography, flat illustration, vibrant cartoon)"
+}}"""
+
+    try:
+        response = chatgpt.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": bible_prompt}],
+            temperature=0.7,
+            max_tokens=400
+        )
+
+        output = response.choices[0].message.content.strip()
+
+        if output.startswith('```json'):
+            output = output[7:]
+        if output.startswith('```'):
+            output = output[3:]
+        if output.endswith('```'):
+            output = output[:-3]
+
+        visual_bible = json.loads(output.strip())
+        print(f"Director: visual bible created — art style: {visual_bible.get('art_style', 'N/A')}")
+        return visual_bible
+
+    except Exception as e:
+        print(f"Director: visual bible generation failed ({e}), continuing without it")
+        return {}
 
 
