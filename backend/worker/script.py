@@ -15,11 +15,11 @@ def generate_script(prompt, style=None):
 First, decide:
 1. content_type: "educational" (facts/concepts), "narrative" (story-driven), "humorous" (meme/comedy), or "general"
 2. slide_count — follow these rules strictly:
-   - "narrative": 8–12 slides (stories need space and structure)
-   - "educational": 8–10 slides
-   - "humorous": 7-10 slides
-   - "general": 7-10 slides
-   MINIMUM is always 7 slides. Never generate fewer than 7.
+   - "narrative": 12–16 slides (stories need space and structure)
+   - "educational": 10–14 slides
+   - "humorous": 10–13 slides
+   - "general": 10–13 slides
+   MINIMUM is always 10 slides. Never generate fewer than 10.
 3. Voice casting from: {AVAILABLE_VOICES}
    - Assign 1 voice for pure narration/monologue
    - Assign multiple distinct voices if the content has characters, dialogue, or distinct personas
@@ -27,8 +27,8 @@ First, decide:
 
 For each slide assign:
 - narration_prompt: exact spoken text (natural, conversational, flows well aloud)
-  CRITICAL: Each narration MUST be 45–70 words. For narrative, 55–75 words.
-  Videos that are too short feel incomplete — give each slide enough substance.
+  CRITICAL: Each narration MUST be 35–50 words. For narrative, 40–55 words.
+  Keep each slide tight and punchy — the higher slide count carries the depth.
 - image_prompt: extremely detailed visual description (subject, setting, lighting, mood, composition, art style, colors)
 - duration: estimated seconds from narration length (~1 second per 2.3 words at fast-speech pace)
 - voice_id: one of {AVAILABLE_VOICES} — the voice that speaks this slide
@@ -42,11 +42,10 @@ IMAGE PROMPT GUIDELINES:
 - Bad: "An astronaut in space"
 
 NARRATION GUIDELINES:
-- 45–75 words per slide — enough substance to carry the pacing
-- Short punchy sentences easy to follow when heard aloud
+- 35–55 words per slide — tight, punchy, easy to follow when heard aloud
 - Conversational, never robotic
 - Natural transitions between slides
-- Total target: 350–600 words for narrative, 280–450 for others
+- Total target: 450–700 words for narrative, 350–550 for others
 
 Return ONLY valid JSON in this exact format:
 {{
@@ -93,8 +92,8 @@ Return ONLY valid JSON in this exact format:
         print("3. Validating Json output\n")
 
         slides = script_json.get('slides', [])
-        if len(slides) < 4:
-            raise ValueError(f'Expected at least 4 slides, got {len(slides)}')
+        if len(slides) < 10:
+            raise ValueError(f'Expected at least 10 slides, got {len(slides)}')
 
         for i, slide in enumerate(slides):
             if not slide.get('narration_prompt'):

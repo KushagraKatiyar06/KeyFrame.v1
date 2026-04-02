@@ -31,8 +31,8 @@ BACKEND_URL=http://localhost:3001
 KEYFRAME_OUTPUT_DIR=C:\\tmp
 
 # FFmpeg override (optional)
-FFMPEG_PATH=./bin/ffmpeg.exe
-FFPROBE_PATH=./bin/ffprobe.exe
+FFMPEG_PATH=..\..\bin\ffmpeg.exe
+FFPROBE_PATH=..\..\bin\ffprobe.exe
 
 # Third-party API keys (fill when required)
 OPENAI_API_KEY=
@@ -79,7 +79,8 @@ volumes:
 ## 4) FFmpeg (Windows guidance)
 
 - Recommended: put `ffmpeg.exe` and `ffprobe.exe` in `./bin/` at the repository root.
-- Verify: `./bin/ffmpeg.exe -version` and `./bin/ffprobe.exe -version` or add `./bin` to your PATH.
+- In `backend/worker/.env`, point to them as `..\\..\\bin\\ffmpeg.exe` and `..\\..\\bin\\ffprobe.exe`.
+- Verify from repo root: `./bin/ffmpeg.exe -version` and `./bin/ffprobe.exe -version`, or add `./bin` to your PATH.
 
 ## 5) Install & run (local, non-Docker)
 
@@ -117,7 +118,7 @@ Note: `--pool=solo` is required on Windows to avoid multiprocessing errors in Ce
 
 ## 8) Troubleshooting (common issues)
 
-- `FileNotFoundError: ... ffmpeg.exe` — worker cannot find ffmpeg. Confirm `FFMPEG_PATH` in `.env` or that `./bin/ffmpeg.exe` exists.
+- `FileNotFoundError: ... ffmpeg.exe` — worker cannot find ffmpeg. Confirm `backend/worker/.env` has `FFMPEG_PATH=..\\..\\bin\\ffmpeg.exe` (or absolute paths), or that `./bin/ffmpeg.exe` exists at repo root.
 - `PermissionError` with Celery on Windows — run worker with `--pool=solo`.
 - Redis connection issues — ensure `REDIS_URL` is correct and Redis is running (or `docker compose up redis`).
 - DB migrations / schema — `backend/api` will attempt to create the `videos` table on startup; verify DB credentials in `DATABASE_URL`.
