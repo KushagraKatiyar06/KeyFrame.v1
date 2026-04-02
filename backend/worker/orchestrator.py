@@ -66,7 +66,7 @@ def process_video_job(self, job_data):
 
         # --- The Continuity Artist + Voice Over in parallel ---
         # Images are generated sequentially (per-slide agent) while voice runs in parallel
-        database.append_job_log(job_id, f'Continuity Artist: generating {slide_count} images (sequential, seed={session_seed})...')
+        database.append_job_log(job_id, f'Continuity Artist: generating {slide_count} images in batches of 3 (seed={session_seed})...')
         database.append_job_log(job_id, 'Voice Over: starting TTS generation in parallel...')
         print(f"Job {job_id}: Starting images (sequential) + voiceover (parallel)...")
 

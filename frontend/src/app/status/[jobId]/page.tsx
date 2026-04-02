@@ -85,8 +85,23 @@ const STATUS_ORDER: Record<string, number> = {
 
 function getStatusOrder(status: string): number {
     if (status.startsWith('agent_director_slides_')) return 3;
-    if (status.startsWith('agent_artist_slide_')) return 3;
+    if (status.startsWith('agent_artist_slide')) return 3; // covers both singular and batch
     return STATUS_ORDER[status] ?? 0;
+}
+
+// Parse active slide numbers from status string.
+// Singular:  agent_artist_slide_5      → Set{5}
+// Batch:     agent_artist_slides_4,5,6 → Set{4,5,6}
+function parseActiveSlides(status: string): Set<number> {
+    if (status.startsWith('agent_artist_slides_')) {
+        const nums = status.slice('agent_artist_slides_'.length).split(',').map(Number).filter(n => n > 0);
+        return new Set(nums);
+    }
+    if (status.startsWith('agent_artist_slide_')) {
+        const n = parseInt(status.slice('agent_artist_slide_'.length), 10);
+        return n > 0 ? new Set([n]) : new Set();
+    }
+    return new Set();
 }
 
 function getFixedAgentState(agent: FixedAgent, statusOrder: number, status: string): AgentState {
@@ -153,9 +168,9 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
             }
 
             // track the highest slide number ever seen (fixes graph disappearing after artist phase)
-            if (s.startsWith('agent_artist_slide_')) {
-                const n = parseInt(s.split('_').pop() || '0', 10);
-                if (n > 0) setMaxSlidesSeen(prev => Math.max(prev, n));
+            if (s.startsWith('agent_artist_slide')) {
+                const parsed = parseActiveSlides(s);
+                if (parsed.size > 0) setMaxSlidesSeen(prev => Math.max(prev, ...parsed));
             }
 
             // initialize title from DB if available
@@ -380,9 +395,8 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
     const currentStatus = jobStatus?.status || 'queued';
     const statusOrder = getStatusOrder(currentStatus);
 
-    const activeSlide = currentStatus.startsWith('agent_artist_slide_')
-        ? parseInt(currentStatus.split('_').pop() || '0', 10)
-        : 0;
+    const activeSlides = parseActiveSlides(currentStatus);
+    const batchMin = activeSlides.size > 0 ? Math.min(...activeSlides) : 0;
 
     // displaySlides: use totalSlides if known, else maxSlidesSeen — never goes back to 0
     const displaySlides = totalSlides > 0 ? totalSlides : maxSlidesSeen;
@@ -390,11 +404,12 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
     const inArtistPhase = statusOrder === 3;
     const pastArtistPhase = statusOrder > 3;
 
-    // which slides are being "consulted" by the currently active slide
+    // which slides are being "consulted" by all currently active slides
     const consultingSet = new Set<number>();
-    if (inArtistPhase && activeSlide > 0) {
-        const activeIdx = activeSlide - 1;
-        (contextRefs[activeIdx] || []).forEach(ref => consultingSet.add(ref));
+    if (inArtistPhase && activeSlides.size > 0) {
+        activeSlides.forEach(slideNum => {
+            (contextRefs[slideNum - 1] || []).forEach(ref => consultingSet.add(ref));
+        });
     }
 
     return (
@@ -449,8 +464,8 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
                                         if (pastArtistPhase) {
                                             slideState = 'done';
                                         } else if (inArtistPhase) {
-                                            if (activeSlide > slideNum) slideState = 'done';
-                                            else if (activeSlide === slideNum) slideState = 'active';
+                                            if (batchMin > 0 && slideNum < batchMin) slideState = 'done';
+                                            else if (activeSlides.has(slideNum)) slideState = 'active';
                                         }
 
                                         const isConsulting = !pastArtistPhase && consultingSet.has(i);
@@ -478,12 +493,12 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
                                     })}
                                 </div>
                                 {/* Show context legend if any consulting is happening */}
-                                {consultingSet.size > 0 && (
+                                {consultingSet.size > 0 && activeSlides.size > 0 && (
                                     <p className={styles.contextHint}>
-                                        Slide {activeSlide} requesting context from slide{consultingSet.size > 1 ? 's' : ''} {[...consultingSet].map(n => n + 1).join(', ')}
+                                        Slide{activeSlides.size > 1 ? 's' : ''} {[...activeSlides].sort((a,b)=>a-b).join(', ')} requesting context from slide{consultingSet.size > 1 ? 's' : ''} {[...consultingSet].map(n => n + 1).join(', ')}
                                     </p>
                                 )}
-                                <div className={`${styles.agentEdge} ${pastArtistPhase ? styles.agentEdgeActive : inArtistPhase && activeSlide === displaySlides ? styles.agentEdgeActive : ''}`} />
+                                <div className={`${styles.agentEdge} ${pastArtistPhase || (inArtistPhase && activeSlides.size > 0 && Math.max(...activeSlides) === displaySlides) ? styles.agentEdgeActive : ''}`} />
                             </div>
                         )}
 
