@@ -63,37 +63,51 @@ Return ONLY valid JSON in this exact format:
 }}"""
 
     try:
-        #api call to OpenAI
-        print("1. Calling OpenAI (openai api call)...")
-        response = chatgpt.chat.completions.create(
-            model = "gpt-4o-mini",
-            messages = [
-                {"role": "system", "content" : chatgpt_prompt},
-                {"role": "user", "content": f"Create a video about: {prompt}"}
-            ],
-            temperature = 0.8,
-            max_tokens = 4000
-        )
+        MIN_SLIDES = 10
+        script_json = None
 
-        #grab and clean up the output
-        print("2. Cleaning output...")
-        output_json_string = response.choices[0].message.content.strip()
+        for attempt in range(1, 4):
+            print(f"1. Calling OpenAI (attempt {attempt}/3)...")
+            user_msg = f"Create a video about: {prompt}"
+            if attempt > 1:
+                user_msg += f" IMPORTANT: You must generate exactly {MIN_SLIDES} slides minimum. Previous attempt had too few slides."
 
-        if output_json_string.startswith('```json'):
-            output_json_string = output_json_string[7:]
-        if output_json_string.startswith('```'):
-            output_json_string = output_json_string[3:]
-        if output_json_string.endswith('```'):
-            output_json_string = output_json_string[:-3]
+            response = chatgpt.chat.completions.create(
+                model = "gpt-4o-mini",
+                messages = [
+                    {"role": "system", "content" : chatgpt_prompt},
+                    {"role": "user", "content": user_msg}
+                ],
+                temperature = 0.8,
+                max_tokens = 4000,
+                timeout = 90
+            )
 
-        script_json = json.loads(output_json_string.strip())
+            print("2. Cleaning output...")
+            output_json_string = response.choices[0].message.content.strip()
+
+            if output_json_string.startswith('```json'):
+                output_json_string = output_json_string[7:]
+            if output_json_string.startswith('```'):
+                output_json_string = output_json_string[3:]
+            if output_json_string.endswith('```'):
+                output_json_string = output_json_string[:-3]
+
+            script_json = json.loads(output_json_string.strip())
+            slide_count = len(script_json.get('slides', []))
+
+            if slide_count >= MIN_SLIDES:
+                print(f"3. Got {slide_count} slides — OK\n")
+                break
+            else:
+                print(f"3. Got {slide_count} slides — need {MIN_SLIDES}, retrying...\n")
+                if attempt == 3:
+                    raise ValueError(f'Expected at least {MIN_SLIDES} slides, got {slide_count} after 3 attempts')
 
         #validates the json
         print("3. Validating Json output\n")
 
         slides = script_json.get('slides', [])
-        if len(slides) < 10:
-            raise ValueError(f'Expected at least 10 slides, got {len(slides)}')
 
         for i, slide in enumerate(slides):
             if not slide.get('narration_prompt'):
@@ -157,7 +171,8 @@ Return ONLY valid JSON:
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": bible_prompt}],
             temperature=0.7,
-            max_tokens=400
+            max_tokens=400,
+            timeout=30
         )
 
         output = response.choices[0].message.content.strip()

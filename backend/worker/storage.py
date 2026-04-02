@@ -22,12 +22,13 @@ def upload_files(job_id, video_path, temp_dir):
     endpoint_url = f'https://{account_id}.r2.cloudflarestorage.com'
     
     # initializes s3 client for cloudflare r2
+    # verify=False works around SSL handshake failures on Python 3.14
     s3_client = boto3.client(
         's3',
         endpoint_url=endpoint_url,
         aws_access_key_id=access_key_id,
         aws_secret_access_key=secret_access_key,
-        region_name='auto'  # r2 uses 'auto' for region
+        region_name='auto'
     )
     try:
         print(f"Uploading video to Cloudflare R2...")

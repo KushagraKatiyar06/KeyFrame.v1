@@ -59,31 +59,40 @@ def generate_images(script_json, job_id, style=None, temp_dir=None, session_seed
         else:
             image_prompt = f"{bible_prefix}{base_prompt}"
 
-        try:
-            completion = client.images.generate(
-                model=model,
-                prompt=image_prompt,
-                response_format="b64_json",
-                extra_body={
-                    "response_extension": "jpg",
-                    "width": 1920,
-                    "height": 1080,
-                    "num_inference_steps": 16,
-                    "seed": session_seed if session_seed is not None else -1
-                }
-            )
-            image_bytes = base64.b64decode(completion.data[0].b64_json)
+        success = False
+        for attempt in range(1, 4):
+            try:
+                completion = client.images.generate(
+                    model=model,
+                    prompt=image_prompt,
+                    response_format="b64_json",
+                    timeout=60,
+                    extra_body={
+                        "response_extension": "jpg",
+                        "width": 1920,
+                        "height": 1080,
+                        "num_inference_steps": 16,
+                        "seed": session_seed if session_seed is not None else -1
+                    }
+                )
+                image_bytes = base64.b64decode(completion.data[0].b64_json)
 
-            image_path = os.path.join(temp_dir, f'image_{i}.jpg')
-            with open(image_path, 'wb') as f:
-                f.write(image_bytes)
+                image_path = os.path.join(temp_dir, f'image_{i}.jpg')
+                with open(image_path, 'wb') as f:
+                    f.write(image_bytes)
 
-            print(f"Image {i+1}/{len(slides)} generated: {image_path}")
-            image_paths.append(image_path)
+                print(f"Image {i+1}/{len(slides)} generated: {image_path}")
+                image_paths.append(image_path)
+                success = True
+                break
 
-        except Exception as e:
-            print(f"Error generating image {i+1} with {model}: {e}")
-            raise
+            except Exception as e:
+                print(f"Image {i+1} attempt {attempt}/3 failed: {e}")
+                if attempt < 3:
+                    time.sleep(3)
+
+        if not success:
+            raise Exception(f"Image {i+1} failed after 3 attempts")
 
     print(f"All {len(image_paths)} images generated successfully")
     return image_paths
