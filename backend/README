@@ -89,7 +89,7 @@ Backend API
 ```powershell
 cd backend/api
 npm install
-set PORT=3001
+set PORT=3002
 node index.js
 ```
 
@@ -107,16 +107,7 @@ celery -A app worker --loglevel=info --pool=solo
 
 Note: `--pool=solo` is required on Windows to avoid multiprocessing errors in Celery.
 
-## 6) How the pieces fit
-
-- `backend/api` exposes HTTP routes used by the frontend: `/api/v1/generate`, `/api/v1/status/:jobId`, `/api/v1/feed`.
-- `backend/worker` listens for jobs (pushed to Redis) and runs `orchestrator.process_video_job` which produces images, TTS, assembles with FFmpeg, and writes outputs to `KEYFRAME_OUTPUT_DIR` and to `backend/api/public/videos/{jobId}`.
-
-## 7) Notes about ports / dev ergonomics
-
-- The frontend dev server defaults to port `3000` (Next.js). To avoid a conflict, the backend defaults to port `3001` (see `.env.example`). Adjust `PORT` if you prefer different ports.
-
-## 8) Troubleshooting (common issues)
+## 6) Troubleshooting (common issues)
 
 - `FileNotFoundError: ... ffmpeg.exe` — worker cannot find ffmpeg. Confirm `backend/worker/.env` has `FFMPEG_PATH=..\\..\\bin\\ffmpeg.exe` (or absolute paths), or that `./bin/ffmpeg.exe` exists at repo root.
 - `PermissionError` with Celery on Windows — run worker with `--pool=solo`.

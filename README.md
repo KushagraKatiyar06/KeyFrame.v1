@@ -35,7 +35,13 @@ There are two separate `.env` files — one for the API, one for the worker. **D
 ```
 REDIS_URL=redis://localhost:6379
 DATABASE_URL=postgresql://keyframe_user:password@localhost:5432/keyframe_db
-PORT=3001
+PORT=3002
+ADMIN_PASSWORD=your-admin-password
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_ACCESS_KEY_ID=
+CLOUDFLARE_SECRET_ACCESS_KEY=
+R2_BUCKET_NAME=
+R2_PUBLIC_DOMAIN=
 ```
 
 ### `backend/worker/.env`
@@ -72,10 +78,11 @@ FFPROBE_PATH=
 
 | Key | Service | Where to get it |
 |---|---|---|
-| `OPENAI_API_KEY` | Script generation + visual bible | platform.openai.com |
-| `NEBIUS_API_KEY` | Flux-Schnell image generation | studio.nebius.ai |
-| `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` | Amazon Polly TTS | console.aws.amazon.com → IAM |
+| `OPENAI_API_KEY` | Script + visual bible generation (GPT-4o-mini) | platform.openai.com |
+| `NEBIUS_API_KEY` | Flux-Schnell image generation (10–16 images/video) | studio.nebius.ai |
+| `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` | Amazon Polly TTS (generative engine) | console.aws.amazon.com → IAM |
 | `CLOUDFLARE_*` + `R2_*` | Video/thumbnail storage | dash.cloudflare.com → R2 |
+| `ADMIN_PASSWORD` | Admin UI (upload/delete/rename videos in feed) | — set your own value |
 
 > **AWS note:** Create an IAM user with `AmazonPollyFullAccess` attached. The `generative` Polly engine (used by default, falls back to `neural`) requires `polly:SynthesizeSpeech` — same key, no extra setup needed.
 
@@ -189,7 +196,10 @@ Create `frontend/.env.local` to point the frontend at the real backend (already 
 ```
 NEXT_PUBLIC_BACKEND_URL=http://localhost:3002
 BACKEND_URL=http://localhost:3002
+ADMIN_PASSWORD=your-admin-password
 ```
+
+> **Note:** `ADMIN_PASSWORD` has no `NEXT_PUBLIC_` prefix — it is server-side only and never sent to the browser. Admin auth uses httpOnly cookies. To log in as admin, click the logo on any page and enter the password.
 
 ## 2) Assets
 
@@ -213,9 +223,9 @@ Then update client fetch calls to use `process.env.NEXT_PUBLIC_BACKEND_URL` (the
 
 ## 4) File structure & pages
 
-- `/` — `src/app/page.tsx` (home + prompt form)
-- `/status/[jobId]` — `src/app/status/[jobId]/page.tsx` (job progress + playback)
-- `/feed` — `src/app/feed/page.tsx` (community thumbnails)
+- `/` — `src/app/page.tsx` (home + prompt form, daily quota indicator)
+- `/status/[jobId]` — `src/app/status/[jobId]/page.tsx` (job progress + video playback)
+- `/feed` — `src/app/feed/page.tsx` (community feed with search; admin controls for upload/rename/delete)
 
 ## 5) Linting
 
@@ -228,5 +238,5 @@ npm run lint
 npm run lint -- --fix
 ```
 
-### Developed by the GatorAI KeyFrame Team
+### Developed by the Kushagra Katiyar
  
