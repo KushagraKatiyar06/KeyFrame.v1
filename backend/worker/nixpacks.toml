@@ -1,5 +1,8 @@
 [phases.setup]
 nixPkgs = ["ffmpeg"]
 
+[phases.build]
+cmds = ["pip install -r requirements.txt"]
+
 [start]
-cmd = "celery -A app worker --loglevel=info"
+cmd = "celery -A app worker --loglevel=info --concurrency=1"
