@@ -41,6 +41,18 @@ router.get('/:id',async(req, res) => {
   }
 });
 
+// GET /api/v1/status/:id/logs — return the pipeline log lines for a job
+router.get('/:id/logs', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const logs = await db.getJobLogs(id);
+    res.json({ logs });
+  } catch (error) {
+    console.error('Error in logs route:', error);
+    res.status(500).json({ error: 'Failed to get logs' });
+  }
+});
+
 // PATCH /api/v1/status/:id/title — save video title from the done screen
 router.patch('/:id/title', async (req, res) => {
   try {

@@ -68,6 +68,30 @@ def update_job_status(job_id, status):
         if conn:
             release_connection(conn)
 
+def append_job_log(job_id, message):
+    """Append a timestamped log line to the job's logs array"""
+    import datetime
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        timestamp = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
+        line = f"[{timestamp}] {message}"
+        query = "UPDATE videos SET logs = array_append(logs, %s) WHERE id = %s"
+        cursor.execute(query, (line, job_id))
+        conn.commit()
+        cursor.close()
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except:
+                pass
+        print(f"Error appending log: {e}")
+    finally:
+        if conn:
+            release_connection(conn)
+
 def update_job_completed(job_id, video_url, thumbnail_url):
     """Update job to done status with video and thumbnail URLs"""
     conn = None

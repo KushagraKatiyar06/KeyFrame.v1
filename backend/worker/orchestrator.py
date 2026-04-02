@@ -38,15 +38,21 @@ def process_video_job(self, job_data):
     try:
         # --- The Watchman: verify environment before spending any API credits ---
         database.update_job_status(job_id, 'agent_watchman_active')
+        database.append_job_log(job_id, 'Watchman: starting pre-flight checks...')
         print(f"Starting job {job_id}")
         watchman.preflight(job_id)
+        database.append_job_log(job_id, 'Watchman: all services reachable. Environment OK.')
 
         # --- The Director: script + global visual bible ---
         database.update_job_status(job_id, 'agent_director_writing')
+        database.append_job_log(job_id, f'Director: generating script for style="{style}"...')
         print(f"Job {job_id}: Generating script...")
         script_data = script.generate_script(prompt, style)
+        database.append_job_log(job_id, f'Director: script ready — {len(script_data.get("slides", []))} slides, content_type={script_data.get("content_type","general")}')
+        database.append_job_log(job_id, 'Director: generating Visual Bible (art style + color palette)...')
         visual_bible = script.generate_visual_bible(script_data, style)
         script_data['visual_bible'] = visual_bible
+        database.append_job_log(job_id, 'Director: Visual Bible complete.')
 
         # Signal slide count + context_refs to the frontend for per-slide agent visualization
         slide_count = len(script_data.get('slides', []))
@@ -60,6 +66,8 @@ def process_video_job(self, job_data):
 
         # --- The Continuity Artist + Voice Over in parallel ---
         # Images are generated sequentially (per-slide agent) while voice runs in parallel
+        database.append_job_log(job_id, f'Continuity Artist: generating {slide_count} images (sequential, seed={session_seed})...')
+        database.append_job_log(job_id, 'Voice Over: starting TTS generation in parallel...')
         print(f"Job {job_id}: Starting images (sequential) + voiceover (parallel)...")
 
         def generate_images_task():
@@ -78,16 +86,20 @@ def process_video_job(self, job_data):
             audio_path, measured_timings = future_voice.result()
 
         script_data['timings'] = measured_timings
+        database.append_job_log(job_id, f'Continuity Artist: all {slide_count} images generated.')
+        database.append_job_log(job_id, 'Voice Over: audio complete.')
         print(f"Job {job_id}: Parallel generation complete!")
 
         # --- The Auditor: validate outputs, retry up to MAX_RETRIES ---
         database.update_job_status(job_id, 'agent_auditor_checking')
+        database.append_job_log(job_id, 'Auditor: validating images and audio...')
         print(f"Job {job_id}: Auditor checking outputs...")
 
         failed_images = auditor.validate_images(image_paths)
         for attempt in range(1, MAX_RETRIES):
             if not failed_images:
                 break
+            database.append_job_log(job_id, f'Auditor: image validation failed (slides {failed_images}), retry {attempt}/{MAX_RETRIES - 1}...')
             print(f"Auditor: image retry {attempt}/{MAX_RETRIES - 1}...")
             database.update_job_status(job_id, 'agent_auditor_retry')
             image_paths = image_generation.generate_images(script_data, job_id, style, temp_dir, session_seed)
@@ -100,6 +112,7 @@ def process_video_job(self, job_data):
         for attempt in range(1, MAX_RETRIES):
             if audio_valid:
                 break
+            database.append_job_log(job_id, f'Auditor: audio validation failed, retry {attempt}/{MAX_RETRIES - 1}...')
             print(f"Auditor: audio retry {attempt}/{MAX_RETRIES - 1}...")
             database.update_job_status(job_id, 'agent_auditor_retry')
             audio_path, measured_timings = voice_over.generate_voice_over(script_data, job_id, temp_dir, style)
@@ -109,8 +122,11 @@ def process_video_job(self, job_data):
         if not audio_valid:
             raise Exception(f"Audio failed validation after {MAX_RETRIES} attempts")
 
+        database.append_job_log(job_id, 'Auditor: all outputs valid.')
+
         # --- Assemble ---
         database.update_job_status(job_id, 'agent_stitching')
+        database.append_job_log(job_id, f'Editor: stitching {slide_count} segments with FFmpeg...')
         print(f"Job {job_id}: Assembling video...")
         video_path = assemble.stitch_video(image_paths, audio_path, script_data['timings'], job_id, temp_dir)
 
@@ -121,15 +137,18 @@ def process_video_job(self, job_data):
         for f in os.listdir(temp_dir):
             if f.startswith('segment_') and f.endswith('.mp4'):
                 os.remove(os.path.join(temp_dir, f))
+        database.append_job_log(job_id, 'Editor: video assembled and validated. Temp segments cleaned.')
         print("Auditor: temporary segments cleaned up")
 
         # --- Upload ---
         database.update_job_status(job_id, 'agent_uploading')
+        database.append_job_log(job_id, 'Uploading video and thumbnail to Cloudflare R2...')
         print(f"Job {job_id}: Uploading to Cloudflare R2...")
         video_url, thumbnail_url = storage.upload_files(job_id, video_path, temp_dir)
 
         # --- Complete ---
         database.update_job_completed(job_id, video_url, thumbnail_url)
+        database.append_job_log(job_id, f'Done! Video available at: {video_url}')
         print(f"Job {job_id} completed successfully!")
 
         try:
@@ -147,5 +166,6 @@ def process_video_job(self, job_data):
 
     except Exception as e:
         print(f"Job {job_id} failed with error: {str(e)}")
+        database.append_job_log(job_id, f'FAILED: {str(e)}')
         database.update_job_status(job_id, 'failed')
         raise e

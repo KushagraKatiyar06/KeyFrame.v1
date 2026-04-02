@@ -109,6 +109,9 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
     const [titleDirty, setTitleDirty] = useState(false);
     const [titleSaved, setTitleSaved] = useState(false);
 
+    const [showLog, setShowLog] = useState(false);
+    const [logLines, setLogLines] = useState<string[]>([]);
+
     // slide tracking — persists across polls
     const [totalSlides, setTotalSlides] = useState(0);
     const [maxSlidesSeen, setMaxSlidesSeen] = useState(0);
@@ -117,6 +120,7 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
 
     const mainVideoRef = useRef<HTMLVideoElement>(null);
     const modalVideoRef = useRef<HTMLVideoElement>(null);
+    const logEndRef = useRef<HTMLDivElement>(null);
 
     const fetchStatus = useCallback(async () => {
         if (!jobId) { setError("Job ID is missing."); return; }
@@ -165,6 +169,32 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
             setError("Could not retrieve job status.");
         }
     }, [jobId]);
+
+    const fetchLogs = useCallback(async () => {
+        if (!jobId) return;
+        try {
+            const res = await fetch(`/api/v1/status/${jobId}/logs`);
+            if (!res.ok) return;
+            const data = await res.json();
+            setLogLines(data.logs || []);
+        } catch { /* silent */ }
+    }, [jobId]);
+
+    // auto-scroll log to bottom when new lines arrive
+    useEffect(() => {
+        if (showLog && logEndRef.current) {
+            logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [logLines, showLog]);
+
+    // poll logs while log panel is open and job is still running
+    useEffect(() => {
+        if (!showLog) return;
+        fetchLogs();
+        if (jobStatus?.status === 'done' || jobStatus?.status === 'failed') return;
+        const id = setInterval(fetchLogs, 5000);
+        return () => clearInterval(id);
+    }, [showLog, fetchLogs, jobStatus?.status]);
 
     useEffect(() => {
         let intervalId: NodeJS.Timeout | undefined;
@@ -305,6 +335,24 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
                                 Submit Video to Community
                             </button>
                         </div>
+                    </div>
+
+                    <div className={styles.logSection}>
+                        <button
+                            className={styles.logToggleButton}
+                            onClick={() => setShowLog(v => !v)}
+                        >
+                            {showLog ? 'Hide Log' : 'Show Log'}
+                        </button>
+                        {showLog && (
+                            <div className={styles.logPanel}>
+                                {logLines.length === 0
+                                    ? <span className={styles.logEmpty}>No log entries yet.</span>
+                                    : logLines.map((line, i) => <div key={i} className={styles.logLine}>{line}</div>)
+                                }
+                                <div ref={logEndRef} />
+                            </div>
+                        )}
                     </div>
 
                     {isModalOpen && (
@@ -466,6 +514,24 @@ export default function StatusPage({ params }: { params: Promise<{ jobId: string
                     </div>
 
                     {error && <p className={styles.errorText}>{error}</p>}
+
+                    <div className={styles.logSection}>
+                        <button
+                            className={styles.logToggleButton}
+                            onClick={() => setShowLog(v => !v)}
+                        >
+                            {showLog ? 'Hide Log' : 'Show Log'}
+                        </button>
+                        {showLog && (
+                            <div className={styles.logPanel}>
+                                {logLines.length === 0
+                                    ? <span className={styles.logEmpty}>Waiting for log entries...</span>
+                                    : logLines.map((line, i) => <div key={i} className={styles.logLine}>{line}</div>)
+                                }
+                                <div ref={logEndRef} />
+                            </div>
+                        )}
+                    </div>
                 </div>
             </main>
         </>

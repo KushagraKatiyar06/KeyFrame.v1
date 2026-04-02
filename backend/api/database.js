@@ -32,6 +32,7 @@ async function createVideosTable() {
     CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status);
     CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at DESC);
     ALTER TABLE videos ADD COLUMN IF NOT EXISTS title TEXT;
+    ALTER TABLE videos ADD COLUMN IF NOT EXISTS logs TEXT[] DEFAULT '{}';
   `;
 
   try {
@@ -180,6 +181,33 @@ async function updateVideoTitle(id, title) {
   }
 }
 
+//appends a log line to a job's logs array
+async function appendJobLog(id, message) {
+  const query = `
+    UPDATE videos
+    SET logs = array_append(logs, $1)
+    WHERE id = $2;
+  `;
+  try {
+    await pool.query(query, [`[${new Date().toISOString()}] ${message}`, id]);
+  } catch (error) {
+    console.error('Error appending log:', error.message);
+  }
+}
+
+//gets the logs array for a job
+async function getJobLogs(id) {
+  const query = `SELECT logs FROM videos WHERE id = $1;`;
+  try {
+    const result = await pool.query(query, [id]);
+    if (result.rows.length === 0) return [];
+    return result.rows[0].logs || [];
+  } catch (error) {
+    console.error('Error getting logs:', error.message);
+    return [];
+  }
+}
+
 //deletes videos by prompt text
 async function deleteVideosByPrompt(prompt) {
   const query = `
@@ -215,6 +243,8 @@ module.exports = {
   insertCompletedVideo,
   updateJobStatus,
   getJobById,
+  getJobLogs,
+  appendJobLog,
   getRecentCompletedVideos,
   deleteVideoById,
   updateVideoTitle,
