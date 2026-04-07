@@ -9,14 +9,12 @@ router.post('/', async (req,res) =>{
   try {
     const { prompt, style } = req.body;
 
-    //check that prompt is provided
     if (!prompt){
       return res.status(400).json({
         error: 'Missing required field: prompt'
       });
     }
 
-    //make sures prompt isn't too long
     if (prompt.length > 500) {
       return res.status(400).json({
         error: 'Prompt is too long. Maximum 500 characters'
@@ -42,13 +40,11 @@ router.post('/', async (req,res) =>{
       console.error('Quota Redis error (failing open):', quotaErr.message);
     }
 
-    // style is optional — Director auto-detects from prompt
+
     const resolvedStyle = style || 'Default';
 
-    //this line inserts the job into postgres
     const jobId = await db.insertJob(prompt, resolvedStyle);
-    
-    //pushs the job to redis queue for the worker to pick up
+
     const jobData = {
       id: jobId,
       prompt: prompt,
@@ -56,7 +52,7 @@ router.post('/', async (req,res) =>{
     };
     await redis.pushJob(jobData);
     
-    //sends the response with the job id
+
     res.status(202).json({
       success: true,
       jobId: jobId,

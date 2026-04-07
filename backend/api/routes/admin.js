@@ -5,13 +5,12 @@ const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../database');
 
-// in-memory multer — no temp files on disk
+
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 500 * 1024 * 1024 } // 500 MB max
 });
 
-// Middleware: verify admin password from Authorization header
 function requireAdmin(req, res, next) {
     const auth = req.headers['authorization'] || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
@@ -51,7 +50,7 @@ async function uploadBufferToR2(buffer, key, contentType) {
     return `https://${domain}/${key}`;
 }
 
-// POST /api/v1/admin/upload — upload a video (+ optional thumbnail) to R2 and register it
+// POST /api/v1/admin/upload — upload a video to R2 and register it
 router.post(
     '/upload',
     requireAdmin,
@@ -74,7 +73,6 @@ router.post(
             const videoKey = `videos/${jobId}.mp4`;
             const videoUrl = await uploadBufferToR2(videoFile.buffer, videoKey, 'video/mp4');
 
-            // upload thumbnail if provided
             let thumbnailUrl = null;
             const thumbFile = req.files?.['thumbnail']?.[0];
             if (thumbFile) {

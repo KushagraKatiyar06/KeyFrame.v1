@@ -5,58 +5,40 @@ import tempfile
 
 # use images and audio files to stitch into one video
 def stitch_video(image_paths, audio_path, timings, job_id, temp_dir):
-    
+
     os.makedirs(temp_dir, exist_ok=True)
     output_path = os.path.join(temp_dir, f'final_video{job_id}.mp4')
-    
-    print(f"Stitching video with {len(image_paths)} images and audio...\n\n")
-    
-    try:
 
-        segment_paths = []
+    print(f"Stitching video with {len(image_paths)} images and audio...\n\n")
+
+    try:
         FFMPEG_PATH = os.getenv('FFMPEG_PATH') or os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'bin', 'ffmpeg.exe'))
 
-        print("1. Iterating through clips and audios and stitching into video")
+        n = len(image_paths)
 
-        for i, (image_path, duration) in enumerate(zip(image_paths, timings)):
-            segment_path = os.path.join(temp_dir, f'segment_{i}.mp4')
-            # -loop 1 keeps the image for the specified duration
-            segment_cmd = [
-                FFMPEG_PATH,
-                '-y',
-                '-loop', '1',
-                '-i', image_path,
-                '-c:v', 'libx264',
-                '-t', str(duration),
-                '-pix_fmt', 'yuv420p',
-                '-vf', 'scale=1920:1080',
-                '-r', '30',
-                '-preset', 'medium',
-                '-crf', '23',
-                segment_path
-            ]
+        input_args = []
+        for image_path, duration in zip(image_paths, timings):
+            input_args += ['-framerate', '30', '-loop', '1', '-t', str(duration), '-i', image_path]
+        input_args += ['-i', audio_path]
 
-            print(f"Encoding segment {i+1}/{len(image_paths)}: {segment_path} ({duration}s)")
-            subprocess.run(segment_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-            if not os.path.exists(segment_path):
-                raise Exception(f"Failed to create segment: {segment_path}")
-            segment_paths.append(segment_path)
-
-        concat_file_path = os.path.join(temp_dir, 'concat_list.txt')
-        with open(concat_file_path, 'w', encoding='utf-8') as f:
-            for p in segment_paths:
-                f.write(f"file '{p}'\n")
+        scale_parts = ';'.join(
+            f'[{i}:v]scale=1920:1080,setsar=1,setpts=PTS-STARTPTS[v{i}]' for i in range(n)
+        )
+        concat_inputs = ''.join(f'[v{i}]' for i in range(n))
+        filter_complex = f'{scale_parts};{concat_inputs}concat=n={n}:v=1:a=0[outv]'
 
         ffmpeg_command = [
             FFMPEG_PATH,
             '-y',
-            '-f', 'concat',
-            '-safe', '0',
-            '-i', concat_file_path,
-            '-i', audio_path,
-            '-map', '0:v',
-            '-map', '1:a',
-            '-c:v', 'copy',
+            *input_args,
+            '-filter_complex', filter_complex,
+            '-map', '[outv]',
+            '-map', f'{n}:a',
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-crf', '28',
+            '-pix_fmt', 'yuv420p',
+            '-r', '30',
             '-c:a', 'aac',
             '-b:a', '192k',
             '-movflags', '+faststart',
@@ -64,7 +46,7 @@ def stitch_video(image_paths, audio_path, timings, job_id, temp_dir):
             output_path
         ]
 
-        print(f"2. Running FFmpeg concat + mux command...")
+        print(f"1. Running single-pass FFmpeg (filter_complex, {n} slides)...")
         result = subprocess.run(
             ffmpeg_command,
             stdout=subprocess.PIPE,
@@ -73,18 +55,16 @@ def stitch_video(image_paths, audio_path, timings, job_id, temp_dir):
             check=True
         )
 
-        print(f"3. FFmpeg completed successfully")
-        
-        # verify the output file exists
+        print(f"2. FFmpeg completed successfully")
+
         if not os.path.exists(output_path):
             raise Exception("FFmpeg completed but output file was not created")
-        
-        # get file size for logging
+
         file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
         print(f"Video created: {output_path} ({file_size_mb:.2f} MB)")
-        
+
         return output_path
-        
+
     except subprocess.CalledProcessError as e:
         print(f"FFmpeg error: {e.stderr}")
         raise Exception(f"FFmpeg failed: {e.stderr}")

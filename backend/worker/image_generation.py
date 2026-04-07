@@ -5,14 +5,11 @@ from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
 
 BATCH_SIZE = 3
-
-# main image generation method — batched (3 concurrent), smart context from context_refs
 def generate_images(script_json, job_id, style=None, temp_dir=None, session_seed=None, status_callback=None):
     slides = script_json.get('slides', [])
     visual_bible = script_json.get('visual_bible', {})
     content_type = script_json.get('content_type', 'general')
 
-    # build a prefix from the visual bible to prepend to every prompt
     bible_parts = []
     if visual_bible.get('art_style'):
         bible_parts.append(visual_bible['art_style'])
@@ -22,8 +19,6 @@ def generate_images(script_json, job_id, style=None, temp_dir=None, session_seed
         bible_parts.append(f"lighting: {visual_bible['lighting_style']}")
     bible_prefix = (', '.join(bible_parts) + '. ') if bible_parts else ''
 
-    # Pre-compute all prompts before any API calls.
-    # context_refs are static text from the Director — no dependency on generated images.
     image_prompts = []
     for i, slide in enumerate(slides):
         base_prompt = slide.get('image_prompt', '')
@@ -65,7 +60,7 @@ def generate_images(script_json, job_id, style=None, temp_dir=None, session_seed
                         "response_extension": "jpg",
                         "width": 1920,
                         "height": 1080,
-                        "num_inference_steps": 16,
+                        "num_inference_steps": 4,
                         "seed": session_seed if session_seed is not None else -1
                     }
                 )
@@ -95,7 +90,7 @@ def generate_images(script_json, job_id, style=None, temp_dir=None, session_seed
         with ThreadPoolExecutor(max_workers=BATCH_SIZE) as executor:
             futures = [executor.submit(generate_single, i, image_prompts[i]) for i in batch_indices]
 
-        # all futures complete (or raised) by the time we exit the with block
+
         for future, i in zip(futures, batch_indices):
             image_paths[i] = future.result()  # re-raises on failure
 

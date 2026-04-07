@@ -9,11 +9,10 @@ load_dotenv()
 # get database url from environment variable
 DATABASE_URL = os.getenv('DATABASE_URL')
 
-# create a connection pool for better performance
 connection_pool = None
 
 def init_pool():
-    """Initialize the connection pool"""
+
     global connection_pool
     if connection_pool is None:
         connection_pool = psycopg2.pool.SimpleConnectionPool(
@@ -22,7 +21,6 @@ def init_pool():
         )
 
 def get_connection():
-    """Get a connection from the pool"""
     try:
         init_pool()
         return connection_pool.getconn()
@@ -31,22 +29,18 @@ def get_connection():
         raise
 
 def release_connection(conn):
-    """Return a connection to the pool"""
     if connection_pool:
         connection_pool.putconn(conn)
 
 def update_job_status(job_id, status):
-    """Update the status of a job"""
     conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
         
-        # update the status in the database
         query = "UPDATE videos SET status = %s WHERE id = %s"
         cursor.execute(query, (status, job_id))
         
-        # commit the transaction
         conn.commit()
         cursor.close()
         
@@ -54,7 +48,6 @@ def update_job_status(job_id, status):
         return True
         
     except Exception as e:
-        # rollback if there's an error
         if conn:
             try:
                 conn.rollback()
@@ -64,12 +57,10 @@ def update_job_status(job_id, status):
         return False
         
     finally:
-        # always return the connection to the pool
         if conn:
             release_connection(conn)
 
 def append_job_log(job_id, message):
-    """Append a timestamped log line to the job's logs array"""
     import datetime
     conn = None
     try:
@@ -93,13 +84,11 @@ def append_job_log(job_id, message):
             release_connection(conn)
 
 def update_job_completed(job_id, video_url, thumbnail_url):
-    """Update job to done status with video and thumbnail URLs"""
     conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        
-        # update status to done and set the URLs
+
         query = """
             UPDATE videos 
             SET status = %s, video_url = %s, thumbnail_url = %s 
@@ -107,7 +96,6 @@ def update_job_completed(job_id, video_url, thumbnail_url):
         """
         cursor.execute(query, ('done', video_url, thumbnail_url, job_id))
         
-        # commit the transaction
         conn.commit()
         cursor.close()
         
@@ -115,7 +103,6 @@ def update_job_completed(job_id, video_url, thumbnail_url):
         return True
         
     except Exception as e:
-        # rollback if there's an error
         if conn:
             try:
                 conn.rollback()
@@ -125,7 +112,6 @@ def update_job_completed(job_id, video_url, thumbnail_url):
         return False
         
     finally:
-        # always return the connection to the pool
         if conn:
             release_connection(conn)
             

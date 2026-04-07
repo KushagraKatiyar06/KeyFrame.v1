@@ -14,7 +14,7 @@ function secondsUntilMidnightUTC() {
   return Math.floor((midnight - now) / 1000);
 }
 
-// GET /api/v1/quota — returns current usage and remaining count
+// GET /api/v1/quota
 router.get('/', async (req, res) => {
   try {
     const used = parseInt(await redis.get(todayKey()) || '0', 10);
@@ -27,7 +27,6 @@ router.get('/', async (req, res) => {
     });
   } catch (error) {
     console.error('Quota check error:', error.message);
-    // fail open — don't block generation if Redis is down
     res.json({ used: 0, limit: DAILY_LIMIT, remaining: DAILY_LIMIT, resetsInSeconds: 86400 });
   }
 });
