@@ -91,7 +91,21 @@ Return ONLY valid JSON in this exact format:
             )
 
             print("2. Cleaning output...")
-            output_json_string = response.choices[0].message.content.strip()
+            choice = response.choices[0]
+            raw_content = choice.message.content
+
+            # some reasoning models return content=None with output in a separate field
+            if not raw_content:
+                # check for reasoning_content fallback (nemotron reasoning models)
+                raw_content = getattr(choice.message, 'reasoning_content', None)
+            if not raw_content:
+                print(f"DEBUG full choice: {choice}")
+                print(f"Empty content from model on attempt {attempt}, retrying...")
+                if attempt == 3:
+                    raise ValueError("Model returned empty content after 3 attempts")
+                continue
+
+            output_json_string = raw_content.strip()
 
             if output_json_string.startswith('```json'):
                 output_json_string = output_json_string[7:]
@@ -183,7 +197,13 @@ Return ONLY valid JSON:
             timeout=30
         )
 
-        output = response.choices[0].message.content.strip()
+        raw = response.choices[0].message.content
+        if not raw:
+            raw = getattr(response.choices[0].message, 'reasoning_content', None)
+        if not raw:
+            raise ValueError("Empty content from model")
+
+        output = raw.strip()
 
         if output.startswith('```json'):
             output = output[7:]
