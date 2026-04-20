@@ -3,7 +3,7 @@ import time
 import replicate
 from concurrent.futures import ThreadPoolExecutor
 
-BATCH_SIZE = 3
+BATCH_SIZE = 1
 def generate_images(script_json, job_id, style=None, temp_dir=None, session_seed=None, status_callback=None):
     slides = script_json.get('slides', [])
     visual_bible = script_json.get('visual_bible', {})
@@ -67,9 +67,11 @@ def generate_images(script_json, job_id, style=None, temp_dir=None, session_seed
                 print(f"Image {i+1}/{len(slides)} generated: {image_path}")
                 return image_path
             except Exception as e:
-                print(f"Image {i+1} attempt {attempt}/3 failed: {e}")
+                err_str = str(e)
+                print(f"Image {i+1} attempt {attempt}/3 failed: {err_str}")
                 if attempt < 3:
-                    time.sleep(3)
+                    wait = 15 if '429' in err_str else 3
+                    time.sleep(wait)
         raise Exception(f"Image {i+1} failed after 3 attempts")
 
     print(f"Generating {len(slides)} images in batches of {BATCH_SIZE}...")
