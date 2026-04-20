@@ -2,12 +2,15 @@ import os
 import json
 from openai import OpenAI
 
-# Nebius text generation client (nemotron model)
+# Nebius text generation client (nemotron model) — used for main script
 nebius = OpenAI(
     base_url="https://api.tokenfactory.us-central1.nebius.com/v1/",
     api_key=os.environ.get("NEBIUS_API_KEY")
 )
 NEBIUS_TEXT_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+
+# OpenAI fallback — used for visual bible (short call, nemotron unreliable on it)
+openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 AVAILABLE_VOICES = ['Ruth', 'Matthew', 'Brian', 'Amy', 'Joanna', 'Danielle']
 
@@ -32,11 +35,11 @@ First, decide:
 
 For each slide assign:
 - narration_prompt: exact spoken text (natural, conversational, flows well aloud)
-  CRITICAL: Each narration MUST be 18–25 words. For narrative, 20–28 words.
-  Target 6–8 seconds of spoken audio per slide at natural speech pace.
+  CRITICAL: Each narration MUST be 13–17 words. No exceptions.
+  Target 5–7 seconds of spoken audio per slide at natural speech pace.
   Every word counts — make them punchy and impactful.
 - image_prompt: extremely detailed visual description (subject, setting, lighting, mood, composition, art style, colors)
-- duration: estimated seconds from narration length (~2.3 words per second at natural speech pace)
+- duration: estimated seconds from narration length (~2.5 words per second at natural speech pace)
 - voice_id: one of {AVAILABLE_VOICES} — the voice that speaks this slide
 - context_refs: list of 0-based slide indices whose visuals this slide directly builds on (e.g. a character from slide 0 reappears in slide 4 → [0]). Use [] if visually independent.
 
@@ -51,8 +54,8 @@ NARRATION GUIDELINES:
 - 18–25 words per slide — detailed, punchy, easy to follow when heard aloud
 - Conversational, never robotic
 - Natural transitions between slides
-- Total target: 200–280 words for narrative, 180–250 for others
-- This produces 60–75 seconds of audio at natural speech pace
+- Total target: 130–170 words across all slides
+- This produces 55–70 seconds of audio at natural speech pace
 
 Return ONLY valid JSON in this exact format:
 {{
@@ -189,8 +192,8 @@ Return ONLY valid JSON:
 }}"""
 
     try:
-        response = nebius.chat.completions.create(
-            model=NEBIUS_TEXT_MODEL,
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": bible_prompt}],
             temperature=0.7,
             max_tokens=400,
@@ -198,8 +201,6 @@ Return ONLY valid JSON:
         )
 
         raw = response.choices[0].message.content
-        if not raw:
-            raw = getattr(response.choices[0].message, 'reasoning_content', None)
         if not raw:
             raise ValueError("Empty content from model")
 
