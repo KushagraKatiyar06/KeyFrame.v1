@@ -1,5 +1,4 @@
 import os
-import html
 import tempfile
 import boto3
 from botocore.config import Config
@@ -44,11 +43,6 @@ def get_audio_duration(path):
     print("Error recieving audio duration.")
     return None
 
-def _wrap_ssml(narration):
-    """Wraps narration text in SSML with faster prosody rate."""
-    safe = html.escape(narration)
-    return f'<speak><prosody rate="120%">{safe}</prosody></speak>'
-
 # main tts generation method — voice is now per-slide from script_json
 def generate_voice_over(script_json, job_id, temp_dir, style=None):
     print("Beginning voice over generation...\n\n")
@@ -74,36 +68,36 @@ def generate_voice_over(script_json, job_id, temp_dir, style=None):
         def generate_single_voiceover(i, slide):
             narration = slide.get('narration_prompt', '')
             voice_id = slide.get('voice_id', 'Matthew')
-            ssml_text = _wrap_ssml(narration)
 
             print(f"{i+1}. Polly: narrating slide {i+1}/{len(slides)} with {voice_id} ({len(narration)} chars)")
 
-            # try generative engine with SSML, fall back to neural, then plain text
+            # generative engine: plain text only (generative does not support SSML)
             try:
                 response = polly.synthesize_speech(
-                    Text=ssml_text,
-                    TextType='ssml',
+                    Text=narration,
+                    TextType='text',
                     OutputFormat='mp3',
                     VoiceId=voice_id,
                     Engine='generative'
                 )
             except Exception:
+                # voice not supported on generative — fall back to neural plain text
                 try:
-                    response = polly.synthesize_speech(
-                        Text=ssml_text,
-                        TextType='ssml',
-                        OutputFormat='mp3',
-                        VoiceId=voice_id,
-                        Engine='neural'
-                    )
-                except Exception:
-                    # final fallback: plain text with neural
                     response = polly.synthesize_speech(
                         Text=narration,
                         TextType='text',
                         OutputFormat='mp3',
                         VoiceId=voice_id,
                         Engine='neural'
+                    )
+                except Exception:
+                    # final fallback: standard engine
+                    response = polly.synthesize_speech(
+                        Text=narration,
+                        TextType='text',
+                        OutputFormat='mp3',
+                        VoiceId=voice_id,
+                        Engine='standard'
                     )
 
             audio_stream = response.get('AudioStream')

@@ -22,7 +22,7 @@ Move from a linear try/except pipeline to a **State Machine** with named agent r
 
 | Agent | Responsibility |
 |---|---|
-| **The Watchman** (Sentinel) | Pre-flight: verify FFmpeg exists and is executable. Canary pings to OpenAI, Nebius, AWS — fail immediately on 401/403 to prevent partial spend. |
+| **The Watchman** (Sentinel) | Pre-flight: verify FFmpeg exists and is executable. Canary pings to OpenAI, Nebius (text), Replicate, AWS — fail immediately on 401/403 to prevent partial spend. |
 | **The Director** (Architect) | Generates the script + a **Global Visual Bible** (character descriptions, color palette, lighting style). |
 | **The Continuity Artist** (Image Gen) | Uses a single `session_seed` across all slides. Prepends the Visual Bible to every image prompt. Each prompt references the previous frame's context. |
 | **The Auditor** (Validator) | Checks images are > 0 bytes and audio durations > 0.5s. Retries the specific agent up to 3 times on failure. Cleans up temp `.mp4` segments only after confirming the final file is valid. |
@@ -57,8 +57,8 @@ User → Next.js → POST /api/v1/generate (Express)
                        ↓
                Celery worker picks up job
                1. Watchman pre-flight check
-               2. Director: generate_script() + Visual Bible  — OpenAI
-               3. Continuity Artist: generate_images()        — Nebius (Flux-Schnell) ─┐ parallel
+               2. Director: generate_script() + Visual Bible  — Nebius (nemotron)
+               3. Continuity Artist: generate_images()        — Replicate (Flux-Schnell) ─┐ parallel
                4. Voice Over: generate_voice_over()           — Amazon Polly           ─┘
                5. Auditor: validate outputs, retry up to 3x
                4. stitch_video()                              — FFmpeg
@@ -82,8 +82,8 @@ User polls GET /api/v1/status/:jobId → gets video_url when done
 | `backend/api/routes/feed.js` | GET /api/v1/feed — last 15 completed videos (5 per style) |
 | `backend/worker/app.py` | Celery app init, broker = REDIS_URL |
 | `backend/worker/orchestrator.py` | Main Celery task — orchestrates all pipeline steps |
-| `backend/worker/script.py` | OpenAI call → structured JSON script with slides |
-| `backend/worker/image_generation.py` | Nebius API → Flux-Schnell image per slide |
+| `backend/worker/script.py` | Nebius nemotron call → structured JSON script with slides |
+| `backend/worker/image_generation.py` | Replicate API → Flux-Schnell image per slide |
 | `backend/worker/voice_over.py` | Amazon Polly TTS per slide → binary concat (no FFmpeg) |
 | `backend/worker/assemble.py` | FFmpeg: images + audio → MP4 segments → final video |
 | `backend/worker/storage.py` | Upload video + thumbnail to Cloudflare R2 via boto3 |
@@ -114,18 +114,17 @@ Hosted on **Neon** (serverless Postgres). Free tier may expire.
 
 ## Technical specs
 
-### Image generation (Flux-Schnell via Nebius)
-- Pick a random int at job start → pass as `seed` to every Nebius API call
+### Image generation (Flux-Schnell via Replicate)
+- Uses `replicate` Python package with `black-forest-labs/flux-schnell` model
+- Pick a random int at job start → pass as `seed` to every Replicate call
 - Prepend the Visual Bible to every image prompt
 - Each prompt references the previous slide's context for continuity
-- Use Slide 1's image URL as `base_image` for subsequent slides if the API supports it
+- Output format: jpg, aspect_ratio: 16:9
 
 ### Audio (Amazon Polly)
-- Use the `generative` engine (not `standard` or `neural`) for higher fidelity
-- Voice assignment by style:
-  - Educational → Ruth or Tiffany (US)
-  - Storytelling → Brian (UK)
-  - Meme → Matthew (US)
+- Use the `generative` engine with **plain text** (generative does NOT support SSML)
+- Falls back to `neural` then `standard` if a voice isn't on generative
+- Voice assignment is per-slide from the script JSON (AI-assigned by the Director)
 - Audio concatenation: pure Python binary concat (no FFmpeg subprocess) — already implemented
 
 ### FFmpeg
@@ -149,7 +148,8 @@ PORT=3001
 DATABASE_URL=...
 REDIS_URL=...
 OPENAI_API_KEY=...
-NEBIUS_API_KEY=...
+NEBIUS_API_KEY=...         # used for nemotron text model (script + visual bible)
+REPLICATE_API_TOKEN=...    # used for Flux-Schnell image generation
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
 AWS_REGION=us-east-1
@@ -172,6 +172,15 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:3002
 - FFmpeg resolved via `FFMPEG_PATH` env var first, then `bin/ffmpeg.exe` fallback. Install via `winget install Gyan.FFmpeg` on Windows.
 - Windows Smart App Control can block FFmpeg subprocess calls with `WinError 4551`. Fix: Settings → Windows Security → App & Browser Control → Smart App Control → Off.
 - Free tier Redis/Postgres may go down. If `getaddrinfo ENOTFOUND` → Redis Cloud instance expired. Fix: recreate on redislabs.com or run locally with Docker.
+
+### Local isolation + deploy safety
+- Use environment isolation, not branch isolation: same code path, different env values for `local`, `staging`, and `production`.
+- Keep runtime env files uncommitted (`.env.local`, `.env` with secrets); commit only `*.env.example` templates.
+- Do not reuse production DB/Redis/storage/API keys for local development.
+- Keep variable names consistent across environments; only values should change.
+- Local-dev infrastructure changes should be additive and backward-compatible so they can be merged to `main` without breaking hosted services.
+- Hosted reconfiguration is only required when runtime code introduces new required env vars or renames/removes existing ones used in production.
+- Recommended flow: feature branch → local smoke test → staging deploy/validation → merge to `main`.
 
 ---
 
@@ -222,8 +231,9 @@ npm run dev          # runs on port 3000
 | Redis Cloud | Celery broker + job queue | app.redislabs.com |
 | Cloudflare R2 | Video + thumbnail storage | dash.cloudflare.com |
 | AWS (Polly) | Text-to-speech | console.aws.amazon.com |
-| Nebius | Flux-Schnell image generation | studio.nebius.ai |
-| OpenAI | Script generation | platform.openai.com |
+| Nebius | nemotron text generation (script + visual bible) | studio.nebius.ai |
+| Replicate | Flux-Schnell image generation | replicate.com |
+| OpenAI | (ping only in Watchman) | platform.openai.com |
 | Vercel | Frontend hosting | vercel.com |
 | Railway | Backend hosting (prod) | railway.app |
 

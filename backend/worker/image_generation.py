@@ -1,8 +1,7 @@
 import os
 import time
-import base64
+import replicate
 from concurrent.futures import ThreadPoolExecutor
-from openai import OpenAI
 
 BATCH_SIZE = 3
 def generate_images(script_json, job_id, style=None, temp_dir=None, session_seed=None, status_callback=None):
@@ -38,12 +37,7 @@ def generate_images(script_json, job_id, style=None, temp_dir=None, session_seed
         else:
             image_prompts.append(f"{bible_prefix}{base_prompt}")
 
-    print(f"Using Nebius (Flux-Schnell) for content_type={content_type}")
-    client = OpenAI(
-        base_url="https://api.studio.nebius.com/v1",
-        api_key=os.getenv('NEBIUS_API_KEY'),
-    )
-    model = "black-forest-labs/flux-schnell"
+    print(f"Using Replicate (Flux-Schnell) for content_type={content_type}")
 
     os.makedirs(temp_dir, exist_ok=True)
     image_paths = [None] * len(slides)
@@ -51,20 +45,22 @@ def generate_images(script_json, job_id, style=None, temp_dir=None, session_seed
     def generate_single(i, prompt):
         for attempt in range(1, 4):
             try:
-                completion = client.images.generate(
-                    model=model,
-                    prompt=prompt,
-                    response_format="b64_json",
-                    timeout=60,
-                    extra_body={
-                        "response_extension": "jpg",
-                        "width": 1920,
-                        "height": 1080,
-                        "num_inference_steps": 4,
-                        "seed": session_seed if session_seed is not None else -1
-                    }
+                replicate_input = {
+                    "prompt": prompt,
+                    "num_outputs": 1,
+                    "aspect_ratio": "16:9",
+                    "output_format": "jpg",
+                    "output_quality": 85,
+                    "num_inference_steps": 4,
+                }
+                if session_seed is not None:
+                    replicate_input["seed"] = session_seed
+
+                output = replicate.run(
+                    "black-forest-labs/flux-schnell",
+                    input=replicate_input
                 )
-                image_bytes = base64.b64decode(completion.data[0].b64_json)
+                image_bytes = output[0].read()
                 image_path = os.path.join(temp_dir, f'image_{i}.jpg')
                 with open(image_path, 'wb') as f:
                     f.write(image_bytes)
