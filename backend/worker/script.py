@@ -2,7 +2,12 @@ import os
 import json
 from openai import OpenAI
 
-chatgpt = OpenAI(api_key = os.getenv('OPENAI_API_KEY'))
+# Nebius text generation client (nemotron model)
+nebius = OpenAI(
+    base_url="https://api.tokenfactory.us-central1.nebius.com/v1/",
+    api_key=os.environ.get("NEBIUS_API_KEY")
+)
+NEBIUS_TEXT_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 
 AVAILABLE_VOICES = ['Ruth', 'Matthew', 'Brian', 'Amy', 'Joanna', 'Danielle']
 
@@ -10,7 +15,7 @@ AVAILABLE_VOICES = ['Ruth', 'Matthew', 'Brian', 'Amy', 'Joanna', 'Danielle']
 def generate_script(prompt, style=None):
     print("Beginning script generation...\n\n")
 
-    chatgpt_prompt = f"""You are a viral content creator specializing in short-form video. Analyze the prompt and create a complete, engaging video script targeting 60–70 seconds total runtime.
+    chatgpt_prompt = f"""You are a viral content creator specializing in short-form video. Analyze the prompt and create a complete, engaging video script targeting 60–75 seconds total runtime.
 
 First, decide:
 1. content_type: "educational" (facts/concepts), "narrative" (story-driven), "humorous" (meme/comedy), or "general"
@@ -27,10 +32,11 @@ First, decide:
 
 For each slide assign:
 - narration_prompt: exact spoken text (natural, conversational, flows well aloud)
-  CRITICAL: Each narration MUST be 13–18 words. For narrative, 15–20 words.
+  CRITICAL: Each narration MUST be 18–25 words. For narrative, 20–28 words.
+  Target 6–8 seconds of spoken audio per slide at natural speech pace.
   Every word counts — make them punchy and impactful.
 - image_prompt: extremely detailed visual description (subject, setting, lighting, mood, composition, art style, colors)
-- duration: estimated seconds from narration length (~1 second per 2.3 words at fast-speech pace)
+- duration: estimated seconds from narration length (~2.3 words per second at natural speech pace)
 - voice_id: one of {AVAILABLE_VOICES} — the voice that speaks this slide
 - context_refs: list of 0-based slide indices whose visuals this slide directly builds on (e.g. a character from slide 0 reappears in slide 4 → [0]). Use [] if visually independent.
 
@@ -42,10 +48,11 @@ IMAGE PROMPT GUIDELINES:
 - Bad: "An astronaut in space"
 
 NARRATION GUIDELINES:
-- 13–20 words per slide — tight, punchy, easy to follow when heard aloud
+- 18–25 words per slide — detailed, punchy, easy to follow when heard aloud
 - Conversational, never robotic
 - Natural transitions between slides
-- Total target: 150–220 words for narrative, 130–180 for others
+- Total target: 200–280 words for narrative, 180–250 for others
+- This produces 60–75 seconds of audio at natural speech pace
 
 Return ONLY valid JSON in this exact format:
 {{
@@ -67,20 +74,20 @@ Return ONLY valid JSON in this exact format:
         script_json = None
 
         for attempt in range(1, 4):
-            print(f"1. Calling OpenAI (attempt {attempt}/3)...")
+            print(f"1. Calling Nebius nemotron (attempt {attempt}/3)...")
             user_msg = f"Create a video about: {prompt}"
             if attempt > 1:
                 user_msg += f" IMPORTANT: You must generate exactly {MIN_SLIDES} slides minimum. Previous attempt had too few slides."
 
-            response = chatgpt.chat.completions.create(
-                model = "gpt-4o-mini",
-                messages = [
-                    {"role": "system", "content" : chatgpt_prompt},
+            response = nebius.chat.completions.create(
+                model=NEBIUS_TEXT_MODEL,
+                messages=[
+                    {"role": "system", "content": chatgpt_prompt},
                     {"role": "user", "content": user_msg}
                 ],
-                temperature = 0.8,
-                max_tokens = 4000,
-                timeout = 90
+                temperature=0.8,
+                max_tokens=4000,
+                timeout=90
             )
 
             print("2. Cleaning output...")
@@ -138,7 +145,7 @@ Return ONLY valid JSON in this exact format:
         return script_json
 
     except json.JSONDecodeError as e:
-        print(f"Error parsing OpenAI response as JSON: {e}")
+        print(f"Error parsing Nebius response as JSON: {e}")
         print(f"Response was: {output_json_string}")
         raise Exception("Failed to generate valid JSON")
 
@@ -168,8 +175,8 @@ Return ONLY valid JSON:
 }}"""
 
     try:
-        response = chatgpt.chat.completions.create(
-            model="gpt-4o-mini",
+        response = nebius.chat.completions.create(
+            model=NEBIUS_TEXT_MODEL,
             messages=[{"role": "user", "content": bible_prompt}],
             temperature=0.7,
             max_tokens=400,
