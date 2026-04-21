@@ -6,12 +6,44 @@ openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 GPT_MODEL = "gpt-4o-mini"
 
 AVAILABLE_VOICES = ['Ruth', 'Matthew', 'Brian', 'Amy', 'Joanna', 'Danielle']
+VALID_CONTENT_TYPES = {'educational', 'narrative', 'humorous', 'general'}
+
+
+def _extract_json(raw: str) -> dict:
+    """Strip optional markdown fences and parse JSON."""
+    text = raw.strip()
+    if text.startswith('```json'):
+        text = text[7:]
+    if text.startswith('```'):
+        text = text[3:]
+    if text.endswith('```'):
+        text = text[:-3]
+    return json.loads(text.strip())
+
+
+def _to_str(val) -> str:
+    """Coerce any GPT value to a plain string (handles nested dicts/lists)."""
+    if isinstance(val, str):
+        return val
+    if isinstance(val, dict):
+        # GPT sometimes wraps in {"description": "..."} — take first string value
+        for v in val.values():
+            result = _to_str(v)
+            if result:
+                return result
+        return ''
+    if isinstance(val, list):
+        return ', '.join(_to_str(v) for v in val if v)
+    if val is None:
+        return ''
+    return str(val)
+
 
 #the main script generation method — style is now auto-detected from the prompt
 def generate_script(prompt, style=None):
     print("Beginning script generation...\n\n")
 
-    chatgpt_prompt = f"""You are a viral content creator specializing in short-form video. Analyze the prompt and create a complete, engaging video script targeting 60–75 seconds total runtime.
+    system_prompt = f"""You are a viral content creator specializing in short-form video. Analyze the prompt and create a complete, engaging video script targeting 60–75 seconds total runtime.
 
 First, decide:
 1. content_type: "educational" (facts/concepts), "narrative" (story-driven), "humorous" (meme/comedy), or "general"
@@ -32,9 +64,9 @@ For each slide assign:
   Target 5–7 seconds of spoken audio per slide at natural speech pace.
   Every word counts — make them punchy and impactful.
 - image_prompt: extremely detailed visual description (subject, setting, lighting, mood, composition, art style, colors)
-- duration: estimated seconds from narration length (~2.5 words per second at natural speech pace)
+- duration: integer — estimated seconds from narration length (~2.5 words per second at natural speech pace)
 - voice_id: one of {AVAILABLE_VOICES} — the voice that speaks this slide
-- context_refs: list of 0-based slide indices whose visuals this slide directly builds on (e.g. a character from slide 0 reappears in slide 4 → [0]). Use [] if visually independent.
+- context_refs: list of 0-based integer slide indices whose visuals this slide directly builds on (e.g. [0]). Use [] if visually independent.
 
 IMAGE PROMPT GUIDELINES:
 - Be extremely specific: include subject, setting, lighting, mood, composition, art style
@@ -50,7 +82,7 @@ NARRATION GUIDELINES:
 - Total target: 130–170 words across all slides
 - This produces 55–70 seconds of audio at natural speech pace
 
-Return ONLY valid JSON in this exact format:
+Return JSON matching this schema exactly:
 {{
   "title": "Engaging Video Title",
   "content_type": "educational|narrative|humorous|general",
@@ -78,39 +110,24 @@ Return ONLY valid JSON in this exact format:
             response = openai_client.chat.completions.create(
                 model=GPT_MODEL,
                 messages=[
-                    {"role": "system", "content": chatgpt_prompt},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_msg}
                 ],
+                response_format={"type": "json_object"},
                 temperature=0.8,
                 max_tokens=4000,
                 timeout=90
             )
 
-            print("2. Cleaning output...")
-            choice = response.choices[0]
-            raw_content = choice.message.content
-
-            # some reasoning models return content=None with output in a separate field
+            print("2. Parsing output...")
+            raw_content = response.choices[0].message.content
             if not raw_content:
-                # check for reasoning_content fallback (nemotron reasoning models)
-                raw_content = getattr(choice.message, 'reasoning_content', None)
-            if not raw_content:
-                print(f"DEBUG full choice: {choice}")
                 print(f"Empty content from model on attempt {attempt}, retrying...")
                 if attempt == 3:
                     raise ValueError("Model returned empty content after 3 attempts")
                 continue
 
-            output_json_string = raw_content.strip()
-
-            if output_json_string.startswith('```json'):
-                output_json_string = output_json_string[7:]
-            if output_json_string.startswith('```'):
-                output_json_string = output_json_string[3:]
-            if output_json_string.endswith('```'):
-                output_json_string = output_json_string[:-3]
-
-            script_json = json.loads(output_json_string.strip())
+            script_json = _extract_json(raw_content)
             slide_count = len(script_json.get('slides', []))
 
             if slide_count >= MIN_SLIDES:
@@ -121,25 +138,47 @@ Return ONLY valid JSON in this exact format:
                 if attempt == 3:
                     raise ValueError(f'Expected at least {MIN_SLIDES} slides, got {slide_count} after 3 attempts')
 
-
-        #validates the json
-        print("3. Validating Json output\n")
+        print("3. Validating and normalising output\n")
 
         slides = script_json.get('slides', [])
 
         for i, slide in enumerate(slides):
-            if not slide.get('narration_prompt'):
+            # coerce required string fields
+            narration = _to_str(slide.get('narration_prompt', ''))
+            if not narration:
                 raise ValueError(f"Slide {i+1} missing narration_prompt")
-            if not slide.get('image_prompt'):
+            slide['narration_prompt'] = narration
+
+            image_prompt = _to_str(slide.get('image_prompt', ''))
+            if not image_prompt:
                 raise ValueError(f"Slide {i+1} missing image_prompt")
-            if not slide.get('duration'):
+            slide['image_prompt'] = image_prompt
+
+            # coerce duration to int
+            try:
+                slide['duration'] = int(float(slide.get('duration') or 8))
+            except (TypeError, ValueError):
                 slide['duration'] = 8
+
             # validate voice_id
             if not slide.get('voice_id') or slide['voice_id'] not in AVAILABLE_VOICES:
                 slide['voice_id'] = 'Matthew'
-            # validate context_refs — only allow refs to previous slides
+
+            # validate context_refs — integers only, back-references only
             raw_refs = slide.get('context_refs', [])
-            slide['context_refs'] = [r for r in raw_refs if isinstance(r, int) and 0 <= r < i]
+            coerced = []
+            for r in raw_refs:
+                try:
+                    idx = int(r)
+                    if 0 <= idx < i:
+                        coerced.append(idx)
+                except (TypeError, ValueError):
+                    pass
+            slide['context_refs'] = coerced
+
+        # validate content_type
+        if script_json.get('content_type') not in VALID_CONTENT_TYPES:
+            script_json['content_type'] = 'general'
 
         timings = [slide['duration'] for slide in slides]
         script_json['timings'] = timings
@@ -156,7 +195,6 @@ Return ONLY valid JSON in this exact format:
 
     except json.JSONDecodeError as e:
         print(f"Error parsing GPT response as JSON: {e}")
-        print(f"Response was: {output_json_string}")
         raise Exception("Failed to generate valid JSON")
 
     except Exception as e:
@@ -176,7 +214,7 @@ def generate_visual_bible(script_data, style=None):
 
 Slide themes: {prompts_summary}
 
-Return ONLY valid JSON:
+Return JSON with these four string fields:
 {{
   "characters": "Key subjects/characters with consistent visual traits (appearance, clothing, style)",
   "color_palette": "3-5 dominant colors and their role (e.g. warm amber highlights, deep navy backgrounds)",
@@ -186,8 +224,9 @@ Return ONLY valid JSON:
 
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=GPT_MODEL,
             messages=[{"role": "user", "content": bible_prompt}],
+            response_format={"type": "json_object"},
             temperature=0.7,
             max_tokens=400,
             timeout=30
@@ -197,16 +236,12 @@ Return ONLY valid JSON:
         if not raw:
             raise ValueError("Empty content from model")
 
-        output = raw.strip()
+        visual_bible = _extract_json(raw)
 
-        if output.startswith('```json'):
-            output = output[7:]
-        if output.startswith('```'):
-            output = output[3:]
-        if output.endswith('```'):
-            output = output[:-3]
+        # Normalise every field to a plain string regardless of what GPT returned
+        for key in ('characters', 'color_palette', 'lighting_style', 'art_style'):
+            visual_bible[key] = _to_str(visual_bible.get(key))
 
-        visual_bible = json.loads(output.strip())
         print(f"Director: visual bible created — art style: {visual_bible.get('art_style', 'N/A')}")
         return visual_bible
 

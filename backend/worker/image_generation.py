@@ -11,12 +11,12 @@ def generate_images(script_json, job_id, style=None, temp_dir=None, session_seed
 
     bible_parts = []
     if visual_bible.get('art_style'):
-        bible_parts.append(visual_bible['art_style'])
+        bible_parts.append(str(visual_bible['art_style']))
     if visual_bible.get('color_palette'):
         bible_parts.append(f"color palette: {visual_bible['color_palette']}")
     if visual_bible.get('lighting_style'):
         bible_parts.append(f"lighting: {visual_bible['lighting_style']}")
-    bible_prefix = (', '.join(bible_parts) + '. ') if bible_parts else ''
+    bible_prefix = (', '.join(str(p) for p in bible_parts) + '. ') if bible_parts else ''
 
     image_prompts = []
     for i, slide in enumerate(slides):
